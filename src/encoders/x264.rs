@@ -2,6 +2,7 @@
 
 use std::{ffi::CString, ptr::NonNull, sync::Arc};
 
+use log::debug;
 use remotia::{traits::FrameProcessor, types::FrameData};
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext},
@@ -112,6 +113,12 @@ impl FrameProcessor for X264EncoderPuller {
         let mut encode_context = self.encode_context.lock().await;
 
         let encoded_bytes = receive_encoded_packet(&mut encode_context, &mut output_buffer);
+
+        debug!(
+            "Pulled encoded packet for frame {} (size = {})",
+            frame_data.get("capture_timestamp"),
+            encoded_bytes
+        );
 
         frame_data.insert_writable_buffer("encoded_frame_buffer", output_buffer);
 

@@ -1,8 +1,9 @@
 use log::{debug, trace};
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext, AVCodecParserContext, AVPacket},
+    avutil::AVDictionary,
     error::RsmpegError,
-    ffi, UnsafeDerefMut, avutil::AVDictionary,
+    ffi, UnsafeDerefMut,
 };
 
 use cstr::cstr;
@@ -74,7 +75,8 @@ impl H264Decoder {
         let mut parsed_offset = 0;
 
         debug!(
-            "Parsing packets (input buffer size: {})...",
+            "Parsing packets (pts: {}, input buffer size: {})...",
+            pts,
             input_buffer.len()
         );
 
@@ -119,7 +121,7 @@ impl H264Decoder {
                 match result {
                     Ok(_) => {
                         trace!("Sent packet successfully");
-                    },
+                    }
                     Err(e) => {
                         debug!("Error on send packet: {}", e);
                         return Some(DropReason::CodecError);
@@ -182,8 +184,8 @@ impl FrameProcessor for H264Decoder {
                             break Ok(());
                         }
                         Err(RsmpegError::DecoderDrainError) => {
-                            trace!("No frames to be pulled");
-                            break Err(DropReason::NoDecodedFrames); 
+                            debug!("No frames to be pulled");
+                            break Err(DropReason::NoDecodedFrames);
                         }
                         Err(RsmpegError::DecoderFlushedError) => {
                             panic!("Decoder has been flushed unexpectedly");
