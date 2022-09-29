@@ -2,7 +2,6 @@
 
 use std::{ffi::CString, ptr::NonNull, sync::Arc};
 
-use log::debug;
 use remotia::{traits::FrameProcessor, types::FrameData};
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext},
