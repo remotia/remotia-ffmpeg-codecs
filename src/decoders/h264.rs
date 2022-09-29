@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use log::{debug, trace};
+use log::{debug, trace, info};
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext, AVCodecParserContext, AVPacket},
     error::RsmpegError,
@@ -16,8 +16,6 @@ use async_trait::async_trait;
 
 pub struct H264Decoder {
     decode_context: AVCodecContext,
-
-    timestamps_queue: VecDeque<u128>,
 
     parser_context: AVCodecParserContext,
 }
@@ -42,7 +40,6 @@ impl H264Decoder {
             },
 
             parser_context: AVCodecParserContext::find(decoder.id).unwrap(),
-            timestamps_queue: VecDeque::new(),
         }
     }
 
@@ -74,7 +71,7 @@ impl H264Decoder {
         self.decoded_yuv_to_bgra(y_data, cb_data, cr_data, output_buffer);
     }
 
-    fn parse_packets(&mut self, input_buffer: &[u8]) -> Option<DropReason> {
+    fn parse_packets(&mut self, input_buffer: &[u8], pts: i64) -> Option<DropReason> {
         let mut packet = AVPacket::new();
         let mut parsed_offset = 0;
 
@@ -93,7 +90,7 @@ impl H264Decoder {
                 let mut packet_data = packet.data;
                 let mut packet_size = packet.size;
 
-                let pts = 0x4000000000000000u64 as i64;
+                let pts = 0x1u64 as i64;
                 let offset = unsafe {
                     ffi::av_parser_parse2(
                         this.as_mut_ptr(),
@@ -117,6 +114,8 @@ impl H264Decoder {
             };
 
             if get_packet {
+                packet.set_pts(pts);
+
                 let result = self.decode_context.send_packet(Some(&packet));
 
                 match result {
@@ -163,23 +162,26 @@ impl FrameProcessor for H264Decoder {
             .extract_writable_buffer("raw_frame_buffer")
             .unwrap();
 
-        // Enqueue timestamp, pasting it to the next decoded frame available
-        // Useful to compensate codec delay, may not work when frames
-        // are not decoded in order
-        trace!("Pushing timestamp: {}", frame_data.get("capture_timestamp"));
-        self.timestamps_queue
-            .push_back(frame_data.get("capture_timestamp"));
+        let capture_timestamp = frame_data.get("capture_timestamp");
+
+        let pts = capture_timestamp as i64;
 
         let decode_result = {
-            if let Some(error) = self.parse_packets(&encoded_frame_buffer) {
+            if let Some(error) = self.parse_packets(&encoded_frame_buffer, pts) {
                 Err(error)
             } else {
                 loop {
                     match self.decode_context.receive_frame() {
                         Ok(avframe) => {
-                            let frame_id = avframe.reordered_opaque as i64;
+                            info!("Received AVFrame: {:?}", avframe);
+
+                            let received_capture_timestamp = avframe.pts as u128;
                             self.write_avframe(avframe, &mut raw_frame_buffer);
-                            break Ok(frame_id);
+
+                            // Override capture timestamp to compensate any codec delay
+                            frame_data.set("capture_timestamp", received_capture_timestamp);
+
+                            break Ok(());
                         }
                         Err(RsmpegError::DecoderDrainError) => {
                             trace!("No frames to be pulled");
@@ -193,21 +195,6 @@ impl FrameProcessor for H264Decoder {
                 }
             }
         };
-
-        match decode_result {
-            Ok(_) | Err(DropReason::CodecError) => {
-                // Override capture timestamp, compensating eventual decoding delay
-                debug!("Enqueued timestamps: {:?}", self.timestamps_queue);
-                let capture_timestamp = self.timestamps_queue.pop_front().unwrap();
-                debug!(
-                    "Popping timestamp: {}, current frame timestamp: {}",
-                    capture_timestamp,
-                    frame_data.get("capture_timestamp")
-                );
-                frame_data.set("capture_timestamp", capture_timestamp);
-            }
-            Err(_) => (),
-        }
 
         encoded_frame_buffer.unsplit(empty_buffer_memory);
 
