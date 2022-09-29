@@ -1,6 +1,4 @@
-use std::collections::VecDeque;
-
-use log::{debug, trace, info};
+use log::{debug, trace};
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext, AVCodecParserContext, AVPacket},
     error::RsmpegError,
@@ -173,7 +171,7 @@ impl FrameProcessor for H264Decoder {
                 loop {
                     match self.decode_context.receive_frame() {
                         Ok(avframe) => {
-                            info!("Received AVFrame: {:?}", avframe);
+                            trace!("Received AVFrame: {:?}", avframe);
 
                             let received_capture_timestamp = avframe.pts as u128;
                             self.write_avframe(avframe, &mut raw_frame_buffer);
