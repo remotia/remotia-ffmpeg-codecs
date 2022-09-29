@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 
-use std::{ffi::CString, ptr::NonNull, sync::Arc, time::Instant};
+use std::{ffi::CString, ptr::NonNull, sync::Arc};
 
+use log::debug;
 use remotia::{traits::FrameProcessor, types::FrameData};
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext},
@@ -143,7 +144,7 @@ fn init_encoder(width: i32, height: i32, crf: u32, x264opts: &CString) -> AVCode
     let options = AVDictionary::new(cstr!(""), cstr!(""), 0)
         .set(cstr!("preset"), cstr!("ultrafast"), 0)
         .set(cstr!("crf"), &crf_str, 0)
-        .set(cstr!("x264opts"), x264opts, 0)
+        .set(cstr!("x264-params"), x264opts, 0)
         .set(cstr!("tune"), cstr!("zerolatency"), 0);
 
     encode_context.open(Some(options)).unwrap();
