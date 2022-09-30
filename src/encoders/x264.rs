@@ -83,6 +83,7 @@ impl FrameProcessor for X264EncoderPusher {
 
         let avframe = self.yuv420_avframe_builder.create_avframe(
             &mut encode_context,
+            frame_data.get("capture_timestamp") as i64,
             &y_channel_buffer,
             &cb_channel_buffer,
             &cr_channel_buffer,

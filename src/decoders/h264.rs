@@ -70,13 +70,13 @@ impl H264Decoder {
         self.decoded_yuv_to_bgra(y_data, cb_data, cr_data, output_buffer);
     }
 
-    fn parse_packets(&mut self, input_buffer: &[u8], pts: i64) -> Option<DropReason> {
+    fn parse_packets(&mut self, input_buffer: &[u8], timestamp: i64) -> Option<DropReason> {
         let mut packet = AVPacket::new();
         let mut parsed_offset = 0;
 
         debug!(
-            "Parsing packets (pts: {}, input buffer size: {})...",
-            pts,
+            "Parsing packets (timestamp: {}, input buffer size: {})...",
+            timestamp,
             input_buffer.len()
         );
 
@@ -90,7 +90,6 @@ impl H264Decoder {
                 let mut packet_data = packet.data;
                 let mut packet_size = packet.size;
 
-                let pts = 0x1u64 as i64;
                 let offset = unsafe {
                     ffi::av_parser_parse2(
                         this.as_mut_ptr(),
@@ -99,8 +98,8 @@ impl H264Decoder {
                         &mut packet_size,
                         data.as_ptr(),
                         data.len() as i32,
-                        pts,
-                        pts,
+                        timestamp,
+                        timestamp,
                         0,
                     )
                 };
@@ -114,8 +113,6 @@ impl H264Decoder {
             };
 
             if get_packet {
-                packet.set_pts(pts);
-
                 let result = self.decode_context.send_packet(Some(&packet));
 
                 match result {
@@ -175,10 +172,10 @@ impl FrameProcessor for H264Decoder {
                         Ok(avframe) => {
                             trace!("Received AVFrame: {:?}", avframe);
 
-                            let received_capture_timestamp = avframe.pts as u128;
                             self.write_avframe(avframe, &mut raw_frame_buffer);
 
                             // Override capture timestamp to compensate any codec delay
+                            let received_capture_timestamp = self.parser_context.last_pts as u128;
                             frame_data.set("capture_timestamp", received_capture_timestamp);
 
                             break Ok(());

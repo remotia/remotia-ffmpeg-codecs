@@ -13,6 +13,7 @@ impl YUV420PAVFrameBuilder {
     pub fn create_avframe(
         &mut self,
         encode_context: &mut AVCodecContext,
+        pts: i64,
         y_channel_buffer: &[u8],
         cb_channel_buffer: &[u8],
         cr_channel_buffer: &[u8],
@@ -22,7 +23,7 @@ impl YUV420PAVFrameBuilder {
         avframe.set_format(encode_context.pix_fmt);
         avframe.set_width(encode_context.width);
         avframe.set_height(encode_context.height);
-        avframe.set_pts(self.frame_count);
+        avframe.set_pts(pts);
 
         /*let avframe = unsafe {
             let raw_avframe = avframe.into_raw().as_ptr();
