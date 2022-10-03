@@ -1,7 +1,9 @@
-use log::debug;
+use log::{debug, trace};
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext, AVCodecParserContext, AVPacket},
+    avutil::AVDictionary,
     error::RsmpegError,
+    ffi, UnsafeDerefMut,
 };
 
 use cstr::cstr;
@@ -24,10 +26,14 @@ impl LibVpxVP9Decoder {
     pub fn new() -> Self {
         let decoder = AVCodec::find_decoder_by_name(cstr!("libvpx-vp9")).unwrap();
 
+        let options = AVDictionary::new(cstr!(""), cstr!(""), 0)
+            .set(cstr!("threads"), cstr!("4"), 0)
+            .set(cstr!("thread_type"), cstr!("slice"), 0);
+
         LibVpxVP9Decoder {
             decode_context: {
                 let mut decode_context = AVCodecContext::new(&decoder);
-                decode_context.open(None).unwrap();
+                decode_context.open(Some(options)).unwrap();
 
                 decode_context
             },
@@ -61,65 +67,75 @@ impl LibVpxVP9Decoder {
         let y_data = unsafe { std::slice::from_raw_parts_mut(data[0], height * linesize_y) };
         let cb_data = unsafe { std::slice::from_raw_parts_mut(data[1], height / 2 * linesize_cb) };
         let cr_data = unsafe { std::slice::from_raw_parts_mut(data[2], height / 2 * linesize_cr) };
-
-        debug!("Y Slice: {:?}", &y_data);
-
         self.decoded_yuv_to_bgra(y_data, cb_data, cr_data, output_buffer);
     }
 
-    fn parse_packets(&mut self, input_buffer: &[u8]) -> Option<DropReason> {
+    fn parse_packets(&mut self, input_buffer: &[u8], timestamp: i64) -> Option<DropReason> {
         let mut packet = AVPacket::new();
         let mut parsed_offset = 0;
+
+        debug!(
+            "Parsing packets (timestamp: {}, input buffer size: {})...",
+            timestamp,
+            input_buffer.len()
+        );
+
         while parsed_offset < input_buffer.len() {
-            let (get_packet, offset) = self
-                .parser_context
-                .parse_packet(
-                    &mut self.decode_context,
-                    &mut packet,
-                    &input_buffer[parsed_offset..],
-                )
-                .unwrap();
+            let (get_packet, offset) = {
+                let this = &mut self.parser_context;
+
+                let codec_context: &mut AVCodecContext = &mut self.decode_context;
+                let packet: &mut AVPacket = &mut packet;
+                let data: &[u8] = &input_buffer[parsed_offset..];
+                let mut packet_data = packet.data;
+                let mut packet_size = packet.size;
+
+                let offset = unsafe {
+                    ffi::av_parser_parse2(
+                        this.as_mut_ptr(),
+                        codec_context.as_mut_ptr(),
+                        &mut packet_data,
+                        &mut packet_size,
+                        data.as_ptr(),
+                        data.len() as i32,
+                        timestamp,
+                        timestamp,
+                        0,
+                    )
+                };
+
+                unsafe {
+                    packet.deref_mut().data = packet_data;
+                    packet.deref_mut().size = packet_size;
+                }
+
+                (packet.size != 0, offset as usize)
+            };
 
             if get_packet {
                 let result = self.decode_context.send_packet(Some(&packet));
 
                 match result {
-                    Ok(_) => (),
+                    Ok(_) => {
+                        trace!("Sent packet successfully");
+                    }
                     Err(e) => {
                         debug!("Error on send packet: {}", e);
                         return Some(DropReason::CodecError);
                     }
                 }
 
+                trace!("Decoded packet: {:?}", packet);
+
                 packet = AVPacket::new();
+            } else {
+                debug!("No more packets to be sent");
             }
 
             parsed_offset += offset;
         }
 
         None
-    }
-
-    fn decode_to_buffer(
-        &mut self,
-        input_buffer: &[u8],
-        output_buffer: &mut [u8],
-    ) -> Result<(), DropReason> {
-        if let Some(error) = self.parse_packets(input_buffer) {
-            return Err(error);
-        }
-
-        let avframe = match self.decode_context.receive_frame() {
-            Ok(frame) => frame,
-            Err(RsmpegError::DecoderDrainError) | Err(RsmpegError::DecoderFlushedError) => {
-                return Err(DropReason::NoDecodedFrames);
-            }
-            Err(e) => panic!("{:?}", e),
-        };
-
-        self.write_avframe(avframe, output_buffer);
-
-        Ok(())
     }
 }
 
@@ -143,22 +159,47 @@ impl FrameProcessor for LibVpxVP9Decoder {
             .extract_writable_buffer("raw_frame_buffer")
             .unwrap();
 
-        debug!("[{}]", frame_data.get("capture_timestamp"));
+        let capture_timestamp = frame_data.get("capture_timestamp");
 
-        let decode_result = self.decode_to_buffer(&encoded_frame_buffer, &mut raw_frame_buffer);
+        let pts = capture_timestamp as i64;
+
+        let decode_result = {
+            if let Some(error) = self.parse_packets(&encoded_frame_buffer, pts) {
+                Err(error)
+            } else {
+                loop {
+                    match self.decode_context.receive_frame() {
+                        Ok(avframe) => {
+                            trace!("Received AVFrame: {:?}", avframe);
+
+                            self.write_avframe(avframe, &mut raw_frame_buffer);
+
+                            // Override capture timestamp to compensate any codec delay
+                            let received_capture_timestamp = self.parser_context.last_pts as u128;
+                            frame_data.set("capture_timestamp", received_capture_timestamp);
+
+                            break Ok(());
+                        }
+                        Err(RsmpegError::DecoderDrainError) => {
+                            debug!("No frames to be pulled");
+                            break Err(DropReason::NoDecodedFrames);
+                        }
+                        Err(RsmpegError::DecoderFlushedError) => {
+                            panic!("Decoder has been flushed unexpectedly");
+                        }
+                        Err(e) => panic!("{:?}", e),
+                    }
+                }
+            }
+        };
 
         encoded_frame_buffer.unsplit(empty_buffer_memory);
-
-        /*debug!(
-            "[{}] Slice: {:?}",
-            frame_data.get("capture_timestamp"),
-            &raw_frame_buffer[0..64]
-        );*/
 
         frame_data.insert_writable_buffer("encoded_frame_buffer", encoded_frame_buffer);
         frame_data.insert_writable_buffer("raw_frame_buffer", raw_frame_buffer);
 
         if let Err(drop_reason) = decode_result {
+            debug!("Dropping frame, reason: {:?}", drop_reason);
             frame_data.set_drop_reason(Some(drop_reason));
         }
 
