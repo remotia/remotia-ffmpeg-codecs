@@ -26,9 +26,7 @@ impl LibVpxVP9Decoder {
     pub fn new() -> Self {
         let decoder = AVCodec::find_decoder_by_name(cstr!("libvpx-vp9")).unwrap();
 
-        let options = AVDictionary::new(cstr!(""), cstr!(""), 0)
-            .set(cstr!("threads"), cstr!("4"), 0)
-            .set(cstr!("thread_type"), cstr!("slice"), 0);
+        let options = AVDictionary::new(cstr!(""), cstr!(""), 0);
 
         LibVpxVP9Decoder {
             decode_context: {
@@ -42,32 +40,34 @@ impl LibVpxVP9Decoder {
         }
     }
 
-    fn decoded_yuv_to_bgra(
-        &mut self,
-        y_frame_buffer: &[u8],
-        u_frame_buffer: &[u8],
-        v_frame_buffer: &[u8],
-        output_buffer: &mut [u8],
-    ) {
-        raster::yuv_to_bgra_separate(
-            y_frame_buffer,
-            u_frame_buffer,
-            v_frame_buffer,
-            output_buffer,
-        );
-    }
-
     fn write_avframe(&mut self, avframe: rsmpeg::avutil::AVFrame, output_buffer: &mut [u8]) {
         let data = avframe.data;
         let linesize = avframe.linesize;
+
+        let width = avframe.width as usize;
         let height = avframe.height as usize;
+
         let linesize_y = linesize[0] as usize;
         let linesize_cb = linesize[1] as usize;
         let linesize_cr = linesize[2] as usize;
+
         let y_data = unsafe { std::slice::from_raw_parts_mut(data[0], height * linesize_y) };
         let cb_data = unsafe { std::slice::from_raw_parts_mut(data[1], height / 2 * linesize_cb) };
         let cr_data = unsafe { std::slice::from_raw_parts_mut(data[2], height / 2 * linesize_cr) };
-        self.decoded_yuv_to_bgra(y_data, cb_data, cr_data, output_buffer);
+
+        raster::yuv_to_bgra_strided_separate(
+            y_data,
+            cb_data,
+            cr_data,
+            width,
+            height,
+            linesize_y,
+            linesize_cb,
+            linesize_cr,
+            output_buffer,
+        );
+
+        println!("Test");
     }
 
     fn parse_packets(&mut self, input_buffer: &[u8], timestamp: i64) -> Option<DropReason> {
