@@ -66,8 +66,6 @@ impl LibVpxVP9Decoder {
             linesize_cr,
             output_buffer,
         );
-
-        println!("Test");
     }
 
     fn parse_packets(&mut self, input_buffer: &[u8], timestamp: i64) -> Option<DropReason> {
