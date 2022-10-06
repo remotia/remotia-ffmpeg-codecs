@@ -10,7 +10,6 @@ use cstr::cstr;
 
 use remotia::{error::DropReason, traits::FrameProcessor, types::FrameData};
 
-use super::utils::yuv2bgr::raster;
 use async_trait::async_trait;
 
 pub struct H264Decoder {
@@ -42,32 +41,29 @@ impl H264Decoder {
         }
     }
 
-    fn decoded_yuv_to_bgra(
+    fn write_avframe(
         &mut self,
-        y_frame_buffer: &[u8],
-        u_frame_buffer: &[u8],
-        v_frame_buffer: &[u8],
-        output_buffer: &mut [u8],
+        avframe: rsmpeg::avutil::AVFrame,
+        y_channel_buffer: &mut [u8],
+        cb_channel_buffer: &mut [u8],
+        cr_channel_buffer: &mut [u8],
     ) {
-        raster::yuv_to_bgra_separate(
-            y_frame_buffer,
-            u_frame_buffer,
-            v_frame_buffer,
-            output_buffer,
-        );
-    }
-
-    fn write_avframe(&mut self, avframe: rsmpeg::avutil::AVFrame, output_buffer: &mut [u8]) {
         let data = avframe.data;
-        let linesize = avframe.linesize;
+
         let height = avframe.height as usize;
+
+        let linesize = avframe.linesize;
         let linesize_y = linesize[0] as usize;
         let linesize_cb = linesize[1] as usize;
         let linesize_cr = linesize[2] as usize;
+
         let y_data = unsafe { std::slice::from_raw_parts_mut(data[0], height * linesize_y) };
         let cb_data = unsafe { std::slice::from_raw_parts_mut(data[1], height / 2 * linesize_cb) };
         let cr_data = unsafe { std::slice::from_raw_parts_mut(data[2], height / 2 * linesize_cr) };
-        self.decoded_yuv_to_bgra(y_data, cb_data, cr_data, output_buffer);
+
+        y_channel_buffer.copy_from_slice(&y_data);
+        cb_channel_buffer.copy_from_slice(&cb_data);
+        cr_channel_buffer.copy_from_slice(&cr_data);
     }
 
     fn parse_packets(&mut self, input_buffer: &[u8], timestamp: i64) -> Option<DropReason> {
@@ -155,8 +151,16 @@ impl FrameProcessor for H264Decoder {
         let empty_buffer_memory =
             encoded_frame_buffer.split_off(frame_data.get("encoded_size") as usize);
 
-        let mut raw_frame_buffer = frame_data
-            .extract_writable_buffer("raw_frame_buffer")
+        let mut y_channel_buffer = frame_data
+            .extract_writable_buffer("y_channel_buffer")
+            .unwrap();
+
+        let mut cb_channel_buffer = frame_data
+            .extract_writable_buffer("cb_channel_buffer")
+            .unwrap();
+
+        let mut cr_channel_buffer = frame_data
+            .extract_writable_buffer("cr_channel_buffer")
             .unwrap();
 
         let capture_timestamp = frame_data.get("capture_timestamp");
@@ -172,7 +176,12 @@ impl FrameProcessor for H264Decoder {
                         Ok(avframe) => {
                             trace!("Received AVFrame: {:?}", avframe);
 
-                            self.write_avframe(avframe, &mut raw_frame_buffer);
+                            self.write_avframe(
+                                avframe,
+                                &mut y_channel_buffer,
+                                &mut cb_channel_buffer,
+                                &mut cr_channel_buffer,
+                            );
 
                             // Override capture timestamp to compensate any codec delay
                             let received_capture_timestamp = self.parser_context.last_pts as u128;
@@ -196,7 +205,9 @@ impl FrameProcessor for H264Decoder {
         encoded_frame_buffer.unsplit(empty_buffer_memory);
 
         frame_data.insert_writable_buffer("encoded_frame_buffer", encoded_frame_buffer);
-        frame_data.insert_writable_buffer("raw_frame_buffer", raw_frame_buffer);
+        frame_data.insert_writable_buffer("y_channel_buffer", y_channel_buffer);
+        frame_data.insert_writable_buffer("cb_channel_buffer", cb_channel_buffer);
+        frame_data.insert_writable_buffer("cr_channel_buffer", cr_channel_buffer);
 
         if let Err(drop_reason) = decode_result {
             debug!("Dropping frame, reason: {:?}", drop_reason);
