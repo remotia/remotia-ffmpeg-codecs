@@ -2,7 +2,6 @@
 
 use std::{ffi::CString, ptr::NonNull, sync::Arc};
 
-use log::debug;
 use remotia::{traits::FrameProcessor, types::FrameData};
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext},
@@ -15,7 +14,10 @@ use async_trait::async_trait;
 use cstr::cstr;
 use tokio::sync::Mutex;
 
-use super::{frame_builders::yuv420p::YUV420PAVFrameBuilder, receive_encoded_packet, send_avframe};
+use super::{
+    utils::frame_builders::yuv420p::YUV420PAVFrameBuilder,
+    utils::{pull::pull_packet, push::push_frame},
+};
 
 pub struct X264Encoder {
     encode_context: Arc<Mutex<AVCodecContext>>,
@@ -67,35 +69,12 @@ pub struct X264EncoderPusher {
 #[async_trait]
 impl FrameProcessor for X264EncoderPusher {
     async fn process(&mut self, mut frame_data: FrameData) -> Option<FrameData> {
-        let y_channel_buffer = frame_data
-            .extract_writable_buffer("y_channel_buffer")
-            .unwrap();
-
-        let cb_channel_buffer = frame_data
-            .extract_writable_buffer("cb_channel_buffer")
-            .unwrap();
-
-        let cr_channel_buffer = frame_data
-            .extract_writable_buffer("cr_channel_buffer")
-            .unwrap();
-
         let mut encode_context = self.encode_context.lock().await;
-
-        let avframe = self.yuv420_avframe_builder.create_avframe(
+        push_frame(
             &mut encode_context,
-            frame_data.get("capture_timestamp") as i64,
-            &y_channel_buffer,
-            &cb_channel_buffer,
-            &cr_channel_buffer,
-            false,
+            &mut self.yuv420_avframe_builder,
+            &mut frame_data,
         );
-
-        send_avframe(&mut encode_context, avframe);
-
-        frame_data.insert_writable_buffer("y_channel_buffer", y_channel_buffer);
-        frame_data.insert_writable_buffer("cb_channel_buffer", cb_channel_buffer);
-        frame_data.insert_writable_buffer("cr_channel_buffer", cr_channel_buffer);
-
         Some(frame_data)
     }
 }
@@ -107,24 +86,8 @@ pub struct X264EncoderPuller {
 #[async_trait]
 impl FrameProcessor for X264EncoderPuller {
     async fn process(&mut self, mut frame_data: FrameData) -> Option<FrameData> {
-        let mut output_buffer = frame_data
-            .extract_writable_buffer("encoded_frame_buffer")
-            .expect("No encoded frame buffer in frame DTO");
-
         let mut encode_context = self.encode_context.lock().await;
-
-        let encoded_bytes = receive_encoded_packet(&mut encode_context, &mut output_buffer);
-
-        debug!(
-            "Pulled encoded packet for frame {} (size = {})",
-            frame_data.get("capture_timestamp"),
-            encoded_bytes
-        );
-
-        frame_data.insert_writable_buffer("encoded_frame_buffer", output_buffer);
-
-        frame_data.set("encoded_size", encoded_bytes as u128);
-
+        pull_packet(&mut encode_context, &mut frame_data);
         Some(frame_data)
     }
 }

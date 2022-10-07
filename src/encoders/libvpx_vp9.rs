@@ -15,7 +15,9 @@ use async_trait::async_trait;
 use cstr::cstr;
 use tokio::sync::Mutex;
 
-use super::{frame_builders::yuv420p::YUV420PAVFrameBuilder, receive_encoded_packet, send_avframe};
+use crate::encoders::utils::packet::receive_encoded_packet;
+
+use super::utils::{frame_builders::yuv420p::YUV420PAVFrameBuilder, avframe::send_avframe};
 
 pub struct LibVpxVP9Encoder {
     encode_context: Arc<Mutex<AVCodecContext>>,

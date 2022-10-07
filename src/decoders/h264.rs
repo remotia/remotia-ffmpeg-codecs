@@ -1,7 +1,7 @@
-use log::{debug};
+use log::debug;
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext, AVCodecParserContext},
-    avutil::AVDictionary
+    avutil::AVDictionary,
 };
 
 use cstr::cstr;
@@ -10,7 +10,7 @@ use remotia::{traits::FrameProcessor, types::FrameData};
 
 use async_trait::async_trait;
 
-use super::utils::{decode_to_yuv};
+use super::utils::decode_to_yuv;
 
 pub struct H264Decoder {
     decode_context: AVCodecContext,

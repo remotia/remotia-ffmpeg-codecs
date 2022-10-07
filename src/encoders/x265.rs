@@ -15,7 +15,9 @@ use async_trait::async_trait;
 use cstr::cstr;
 use tokio::sync::Mutex;
 
-use super::{frame_builders::yuv420p::YUV420PAVFrameBuilder, receive_encoded_packet, send_avframe};
+use crate::encoders::utils::packet::receive_encoded_packet;
+
+use super::{utils::{avframe::send_avframe, frame_builders::yuv420p::YUV420PAVFrameBuilder}};
 
 pub struct X265Encoder {
     encode_context: Arc<Mutex<AVCodecContext>>,

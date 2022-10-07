@@ -1,6 +1,9 @@
 use log::{debug, trace};
 use remotia::error::DropReason;
-use rsmpeg::{avcodec::{AVCodecContext, AVPacket, AVCodecParserContext}, ffi, UnsafeDerefMut};
+use rsmpeg::{
+    avcodec::{AVCodecContext, AVCodecParserContext, AVPacket},
+    ffi, UnsafeDerefMut,
+};
 
 pub fn parse_packets(
     mut decode_context: &mut AVCodecContext,
