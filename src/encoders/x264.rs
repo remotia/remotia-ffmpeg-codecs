@@ -16,7 +16,7 @@ use tokio::sync::Mutex;
 
 use super::{
     utils::frame_builders::yuv420p::YUV420PAVFrameBuilder,
-    utils::{pull::pull_packet, push::push_frame},
+    utils::{pull::pull_packet, push::push_frame}, options::Options,
 };
 
 pub struct X264Encoder {
@@ -25,7 +25,7 @@ pub struct X264Encoder {
     width: i32,
     height: i32,
 
-    x264opts: CString,
+    options: Options,
 }
 
 // TODO: Evaluate a safer way to move the encoder to another thread
@@ -33,16 +33,15 @@ pub struct X264Encoder {
 unsafe impl Send for X264Encoder {}
 
 impl X264Encoder {
-    pub fn new(width: i32, height: i32, x264opts: &str) -> Self {
-        let x264opts = CString::new(x264opts.to_string()).unwrap();
-        let encoder = init_encoder(width, height, 21, &x264opts);
+    pub fn new(width: i32, height: i32, options: Options) -> Self {
+        let encoder = init_encoder(width, height, options.clone());
         let encode_context = Arc::new(Mutex::new(encoder));
 
         X264Encoder {
             width,
             height,
 
-            x264opts,
+            options,
             encode_context,
         }
     }
@@ -92,7 +91,7 @@ impl FrameProcessor for X264EncoderPuller {
     }
 }
 
-fn init_encoder(width: i32, height: i32, crf: u32, x264opts: &CString) -> AVCodecContext {
+fn init_encoder(width: i32, height: i32, options: Options) -> AVCodecContext {
     let encoder = AVCodec::find_encoder_by_name(cstr!("libx264")).unwrap();
     let mut encode_context = AVCodecContext::new(&encoder);
     encode_context.set_width(width);
@@ -108,15 +107,8 @@ fn init_encoder(width: i32, height: i32, crf: u32, x264opts: &CString) -> AVCode
         AVCodecContext::from_raw(NonNull::new(raw_encode_context).unwrap())
     };
 
-    let crf_str = format!("{}", crf);
-    let crf_str = CString::new(crf_str).unwrap();
+    let options_dict = options.to_av_dict();
 
-    let options = AVDictionary::new(cstr!(""), cstr!(""), 0)
-        .set(cstr!("preset"), cstr!("ultrafast"), 0)
-        .set(cstr!("crf"), &crf_str, 0)
-        .set(cstr!("x264-params"), x264opts, 0)
-        .set(cstr!("tune"), cstr!("zerolatency"), 0);
-
-    encode_context.open(Some(options)).unwrap();
+    encode_context.open(Some(options_dict)).unwrap();
     encode_context
 }

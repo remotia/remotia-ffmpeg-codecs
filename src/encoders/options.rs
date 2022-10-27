@@ -4,7 +4,7 @@ use rsmpeg::avutil::AVDictionary;
 
 use cstr::cstr;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Options {
     pairs: HashMap<String, (String, u32)>,
 }
