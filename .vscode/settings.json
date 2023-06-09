@@ -1,0 +1,5 @@
+{
+    "rust-analyzer.cargo.extraEnv": {
+        "FFMPEG_PKG_CONFIG_PATH": "${workspaceFolder}/tmp/ffmpeg_build/lib/pkgconfig"
+    }
+}

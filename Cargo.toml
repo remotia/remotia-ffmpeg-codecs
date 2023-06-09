@@ -7,14 +7,16 @@ edition = "2021"
 version = "1.14.0"
 features = ["rt-multi-thread"]
 
-[dependencies]
-remotia = { git = "https://github.com/remotia/remotia", branch = "rework_tweaks" }
+[dependencies.remotia]
+path = "../remotia"
+features = ["buffers"]
 
-rsmpeg = "0.12.0"
-env_logger = "0.9.0"
+[dependencies]
+rsmpeg = "0.14.1+ffmpeg.6.0"
+env_logger = "0.10.0"
 log = "0.4.14"
 
-async-trait = "0.1.51"
+async-trait = "0.1.68"
 bytes = "1.1.0"
 
 cstr = "0.2.9"
