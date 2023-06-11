@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
-use std::{ffi::CString, ptr::NonNull, sync::Arc};
+use std::{ptr::NonNull, sync::Arc};
 
-use remotia::{traits::FrameProcessor, types::FrameData};
+use bytes::BytesMut;
+use remotia::traits::{BorrowableFrameProperties, FrameProcessor, BorrowFrameProperties, PullableFrameProperties};
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext},
-    avutil::AVDictionary,
     ffi,
 };
 
@@ -15,25 +15,39 @@ use cstr::cstr;
 use tokio::sync::Mutex;
 
 use super::{
+    options::Options,
     utils::frame_builders::yuv420p::YUV420PAVFrameBuilder,
-    utils::{pull::pull_packet, push::push_frame}, options::Options,
+    utils::{pull::pull_packet, push::push_frame},
 };
 
-pub struct X264Encoder {
+pub struct X264Encoder<K: Copy> {
     encode_context: Arc<Mutex<AVCodecContext>>,
 
     width: i32,
     height: i32,
+
+    y_buffer_key: K,
+    cb_buffer_key: K,
+    cr_buffer_key: K,
+    encoded_buffer_key: K,
 
     options: Options,
 }
 
 // TODO: Evaluate a safer way to move the encoder to another thread
 // Necessary for multi-threaded pipelines
-unsafe impl Send for X264Encoder {}
+unsafe impl<K: Copy> Send for X264Encoder<K> {}
 
-impl X264Encoder {
-    pub fn new(width: i32, height: i32, options: Options) -> Self {
+impl<K: Copy> X264Encoder<K> {
+    pub fn new(
+        width: i32,
+        height: i32,
+        y_buffer_key: K,
+        cb_buffer_key: K,
+        cr_buffer_key: K,
+        encoded_buffer_key: K,
+        options: Options,
+    ) -> Self {
         let encoder = init_encoder(width, height, options.clone());
         let encode_context = Arc::new(Mutex::new(encoder));
 
@@ -41,52 +55,80 @@ impl X264Encoder {
             width,
             height,
 
+            y_buffer_key,
+            cb_buffer_key,
+            cr_buffer_key,
+            encoded_buffer_key,
+
             options,
             encode_context,
         }
     }
 
-    pub fn pusher(&self) -> X264EncoderPusher {
+    pub fn pusher(&self) -> X264EncoderPusher<K> {
         X264EncoderPusher {
             encode_context: self.encode_context.clone(),
             yuv420_avframe_builder: YUV420PAVFrameBuilder::new(),
+            y_buffer_key: self.y_buffer_key,
+            cb_buffer_key: self.cb_buffer_key,
+            cr_buffer_key: self.cr_buffer_key,
         }
     }
 
-    pub fn puller(&self) -> X264EncoderPuller {
+    pub fn puller(&self) -> X264EncoderPuller<K> {
         X264EncoderPuller {
             encode_context: self.encode_context.clone(),
+            encoded_buffer_key: self.encoded_buffer_key,
         }
     }
 }
 
-pub struct X264EncoderPusher {
+pub struct X264EncoderPusher<K> {
     encode_context: Arc<Mutex<AVCodecContext>>,
     yuv420_avframe_builder: YUV420PAVFrameBuilder,
+    y_buffer_key: K,
+    cb_buffer_key: K,
+    cr_buffer_key: K,
 }
 
 #[async_trait]
-impl FrameProcessor for X264EncoderPusher {
-    async fn process(&mut self, mut frame_data: FrameData) -> Option<FrameData> {
+impl<'a, F, K> FrameProcessor<F> for X264EncoderPusher<K>
+where
+    K: Send + Copy,
+    F: BorrowFrameProperties<K, &'a [u8]> + Send + 'static,
+{
+    async fn process(&mut self, frame_data: F) -> Option<F> {
         let mut encode_context = self.encode_context.lock().await;
+
         push_frame(
             &mut encode_context,
             &mut self.yuv420_avframe_builder,
-            &mut frame_data,
+            0 as i64,
+            frame_data.get_ref(&self.y_buffer_key).unwrap(),
+            frame_data.get_ref(&self.cb_buffer_key).unwrap(),
+            frame_data.get_ref(&self.cr_buffer_key).unwrap()
         );
+
         Some(frame_data)
     }
 }
 
-pub struct X264EncoderPuller {
+pub struct X264EncoderPuller<K> {
     encode_context: Arc<Mutex<AVCodecContext>>,
+    encoded_buffer_key: K,
 }
 
 #[async_trait]
-impl FrameProcessor for X264EncoderPuller {
-    async fn process(&mut self, mut frame_data: FrameData) -> Option<FrameData> {
+impl<'a, F, K> FrameProcessor<F> for X264EncoderPuller<K> where
+    K: Send,
+    F: BorrowableFrameProperties<K, &'a mut [u8]> + Send + 'static,
+{
+    async fn process(&mut self, mut frame_data: F) -> Option<F> {
         let mut encode_context = self.encode_context.lock().await;
-        pull_packet(&mut encode_context, &mut frame_data);
+        pull_packet(
+            &mut encode_context, 
+            frame_data.get_mut_ref(&self.encoded_buffer_key).unwrap()
+        );
         Some(frame_data)
     }
 }
