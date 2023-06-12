@@ -3,7 +3,7 @@
 use std::{ptr::NonNull, sync::Arc};
 
 use bytes::BytesMut;
-use remotia::traits::{BorrowableFrameProperties, FrameProcessor, BorrowFrameProperties, PullableFrameProperties};
+use remotia::traits::{BorrowFrameProperties, BorrowMutFrameProperties, FrameProcessor};
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext},
     ffi,
@@ -91,12 +91,11 @@ pub struct X264EncoderPusher<K> {
     cr_buffer_key: K,
 }
 
-/*
 #[async_trait]
-impl<'a, F, K> FrameProcessor<F> for X264EncoderPusher<K>
+impl<F, K> FrameProcessor<F> for X264EncoderPusher<K>
 where
     K: Send + Copy,
-    F: BorrowFrameProperties<K, &'a [u8]> + Send + 'static,
+    F: BorrowFrameProperties<K, BytesMut> + Send + 'static,
 {
     async fn process(&mut self, frame_data: F) -> Option<F> {
         let mut encode_context = self.encode_context.lock().await;
@@ -107,35 +106,33 @@ where
             0 as i64,
             frame_data.get_ref(&self.y_buffer_key).unwrap(),
             frame_data.get_ref(&self.cb_buffer_key).unwrap(),
-            frame_data.get_ref(&self.cr_buffer_key).unwrap()
+            frame_data.get_ref(&self.cr_buffer_key).unwrap(),
         );
 
         Some(frame_data)
     }
 }
-*/
 
 pub struct X264EncoderPuller<K> {
     encode_context: Arc<Mutex<AVCodecContext>>,
     encoded_buffer_key: K,
 }
 
-/*
 #[async_trait]
-impl<'a, F, K> FrameProcessor<F> for X264EncoderPuller<K> where
+impl<'a, F, K> FrameProcessor<F> for X264EncoderPuller<K>
+where
     K: Send,
-    F: BorrowableFrameProperties<K, &'a mut [u8]> + Send + 'static,
+    F: BorrowMutFrameProperties<K, BytesMut> + Send + 'static,
 {
     async fn process(&mut self, mut frame_data: F) -> Option<F> {
         let mut encode_context = self.encode_context.lock().await;
         pull_packet(
-            &mut encode_context, 
-            frame_data.get_mut_ref(&self.encoded_buffer_key).unwrap()
+            &mut encode_context,
+            frame_data.get_mut_ref(&self.encoded_buffer_key).unwrap(),
         );
         Some(frame_data)
     }
 }
-*/
 
 fn init_encoder(width: i32, height: i32, options: Options) -> AVCodecContext {
     let encoder = AVCodec::find_encoder_by_name(cstr!("libx264")).unwrap();
@@ -158,4 +155,3 @@ fn init_encoder(width: i32, height: i32, options: Options) -> AVCodecContext {
     encode_context.open(Some(options_dict)).unwrap();
     encode_context
 }
-

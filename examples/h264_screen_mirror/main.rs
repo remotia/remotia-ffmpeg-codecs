@@ -7,6 +7,7 @@ use remotia::{
     processors::ticker::Ticker,
     render::winit::WinitRenderer,
 };
+use remotia_ffmpeg_codecs::encoders::{options::Options, x264::X264Encoder};
 
 use crate::types::{BufferType, FrameData};
 
@@ -31,16 +32,30 @@ async fn main() {
 
     let args = Args::parse();
 
-    let mut capturer = ScrapFrameCapturer::new_from_primary(BufferType::RawFrameBuffer);
+    let mut capturer = ScrapFrameCapturer::new_from_primary(BufferType::CapturedRGBAFrameBuffer);
 
     log::info!("Streaming at {}x{}", capturer.width(), capturer.height());
+
+    let encoder = X264Encoder::new(
+        args.width as i32,
+        args.height as i32,
+        BufferType::YFrameBuffer,
+        BufferType::CBFrameBuffer,
+        BufferType::CRFrameBuffer,
+        BufferType::EncodedFrameBuffer,
+        Options::new(),
+    );
 
     let handles = Pipeline::<FrameData>::new()
         .link(
             Component::new()
                 .append(Ticker::new(1000 / args.framerate))
                 .append(BufferAllocator::new(
-                    BufferType::RawFrameBuffer,
+                    BufferType::CapturedRGBAFrameBuffer,
+                    capturer.buffer_size(),
+                ))
+                .append(BufferAllocator::new(
+                    BufferType::DecodedRGBAFrameBuffer,
                     capturer.buffer_size(),
                 ))
                 .append(BufferAllocator::new(
@@ -57,19 +72,21 @@ async fn main() {
                 ))
                 .append(capturer)
                 .append(RGBAToYUV420PConverter::new(
-                    BufferType::RawFrameBuffer,
+                    BufferType::CapturedRGBAFrameBuffer,
                     BufferType::YFrameBuffer,
                     BufferType::CBFrameBuffer,
                     BufferType::CRFrameBuffer,
                 ))
+                // .append(encoder.pusher())
+                // .append(encoder.puller())
                 .append(YUV420PToRGBAConverter::new(
                     BufferType::YFrameBuffer,
                     BufferType::CBFrameBuffer,
                     BufferType::CRFrameBuffer,
-                    BufferType::RawFrameBuffer,
+                    BufferType::DecodedRGBAFrameBuffer,
                 ))
                 .append(WinitRenderer::new(
-                    BufferType::RawFrameBuffer,
+                    BufferType::DecodedRGBAFrameBuffer,
                     args.width,
                     args.height,
                 )),
