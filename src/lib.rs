@@ -1,2 +1,2 @@
-// pub mod decoders;
+pub mod decoders;
 pub mod encoders;

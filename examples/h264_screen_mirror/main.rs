@@ -7,7 +7,7 @@ use remotia::{
     processors::ticker::Ticker,
     render::winit::WinitRenderer,
 };
-use remotia_ffmpeg_codecs::encoders::{options::Options, x264::X264Encoder};
+use remotia_ffmpeg_codecs::{encoders::{options::Options, x264::X264Encoder}, decoders::h264::H264Decoder};
 
 use crate::types::{BufferType, FrameData};
 
@@ -39,11 +39,20 @@ async fn main() {
     let encoder = X264Encoder::new(
         args.width as i32,
         args.height as i32,
-        BufferType::YFrameBuffer,
-        BufferType::CBFrameBuffer,
-        BufferType::CRFrameBuffer,
+        BufferType::YBuffer,
+        BufferType::CBBuffer,
+        BufferType::CRBuffer,
         BufferType::EncodedFrameBuffer,
-        Options::new(),
+        Options::new()
+            .set("crf", "26")
+            .set("tune", "zerolatency"),
+    );
+
+    let decoder = H264Decoder::new(
+        BufferType::EncodedFrameBuffer,
+        BufferType::DecodedYBuffer,
+        BufferType::DecodedCBBuffer,
+        BufferType::DecodedCRBuffer,
     );
 
     let handles = Pipeline::<FrameData>::new()
@@ -54,35 +63,52 @@ async fn main() {
                     BufferType::CapturedRGBAFrameBuffer,
                     capturer.buffer_size(),
                 ))
+                .append(capturer)
                 .append(BufferAllocator::new(
-                    BufferType::DecodedRGBAFrameBuffer,
-                    capturer.buffer_size(),
-                ))
-                .append(BufferAllocator::new(
-                    BufferType::YFrameBuffer,
+                    BufferType::YBuffer,
                     (args.width * args.height) as usize,
                 ))
                 .append(BufferAllocator::new(
-                    BufferType::CBFrameBuffer,
+                    BufferType::CBBuffer,
                     ((args.width * args.height) / 4) as usize,
                 ))
                 .append(BufferAllocator::new(
-                    BufferType::CRFrameBuffer,
+                    BufferType::CRBuffer,
                     ((args.width * args.height) / 4) as usize,
                 ))
-                .append(capturer)
                 .append(RGBAToYUV420PConverter::new(
                     BufferType::CapturedRGBAFrameBuffer,
-                    BufferType::YFrameBuffer,
-                    BufferType::CBFrameBuffer,
-                    BufferType::CRFrameBuffer,
+                    BufferType::YBuffer,
+                    BufferType::CBBuffer,
+                    BufferType::CRBuffer,
                 ))
-                // .append(encoder.pusher())
-                // .append(encoder.puller())
+                .append(encoder.pusher())
+                .append(BufferAllocator::new(
+                    BufferType::EncodedFrameBuffer,
+                    (args.width * args.height * 4) as usize,
+                ))
+                .append(encoder.puller())
+                .append(BufferAllocator::new(
+                    BufferType::DecodedYBuffer,
+                    (args.width * args.height) as usize,
+                ))
+                .append(BufferAllocator::new(
+                    BufferType::DecodedCBBuffer,
+                    ((args.width * args.height) / 4) as usize,
+                ))
+                .append(BufferAllocator::new(
+                    BufferType::DecodedCRBuffer,
+                    ((args.width * args.height) / 4) as usize,
+                ))
+                .append(decoder)
+                .append(BufferAllocator::new(
+                    BufferType::DecodedRGBAFrameBuffer,
+                    (args.width * args.height * 4) as usize,
+                ))
                 .append(YUV420PToRGBAConverter::new(
-                    BufferType::YFrameBuffer,
-                    BufferType::CBFrameBuffer,
-                    BufferType::CRFrameBuffer,
+                    BufferType::DecodedYBuffer,
+                    BufferType::DecodedCBBuffer,
+                    BufferType::DecodedCRBuffer,
                     BufferType::DecodedRGBAFrameBuffer,
                 ))
                 .append(WinitRenderer::new(

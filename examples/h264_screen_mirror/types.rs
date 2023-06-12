@@ -6,10 +6,13 @@ use remotia::traits::{BorrowableFrameProperties, PullableFrameProperties, Borrow
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BufferType {
     CapturedRGBAFrameBuffer,
-    YFrameBuffer,
-    CBFrameBuffer,
-    CRFrameBuffer,
+    YBuffer,
+    CBBuffer,
+    CRBuffer,
     EncodedFrameBuffer,
+    DecodedYBuffer,
+    DecodedCBBuffer,
+    DecodedCRBuffer,
     DecodedRGBAFrameBuffer,
 }
 

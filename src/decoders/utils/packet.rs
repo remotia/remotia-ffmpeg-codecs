@@ -1,5 +1,4 @@
 use log::{debug, trace};
-use remotia::error::DropReason;
 use rsmpeg::{
     avcodec::{AVCodecContext, AVCodecParserContext, AVPacket},
     ffi, UnsafeDerefMut,
@@ -10,7 +9,7 @@ pub fn parse_packets(
     mut parser_context: &mut AVCodecParserContext,
     input_buffer: &[u8],
     timestamp: i64,
-) -> Option<DropReason> {
+) -> Option<()> {
     let mut packet = AVPacket::new();
     let mut parsed_offset = 0;
 
@@ -61,7 +60,7 @@ pub fn parse_packets(
                 }
                 Err(e) => {
                     debug!("Error on send packet: {}", e);
-                    return Some(DropReason::CodecError);
+                    return Some(());
                 }
             }
 

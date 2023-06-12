@@ -1,3 +1,4 @@
+use bytes::BytesMut;
 use log::debug;
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext, AVCodecParserContext},
@@ -6,22 +7,32 @@ use rsmpeg::{
 
 use cstr::cstr;
 
-use remotia::{traits::FrameProcessor, types::FrameData};
+use remotia::traits::{FrameProcessor, PullableFrameProperties};
 
 use async_trait::async_trait;
 
 use super::utils::decode_to_yuv;
 
-pub struct H264Decoder {
+pub struct H264Decoder<K> {
     decode_context: AVCodecContext,
     parser_context: AVCodecParserContext,
+
+    encoded_buffer_key: K,
+    y_buffer_key: K,
+    cb_buffer_key: K,
+    cr_buffer_key: K
 }
 
 // TODO: Fix all those unsafe impl
-unsafe impl Send for H264Decoder {}
+unsafe impl<K> Send for H264Decoder<K> {}
 
-impl H264Decoder {
-    pub fn new() -> Self {
+impl<K> H264Decoder<K> {
+    pub fn new(
+        encoded_buffer_key: K,
+        y_buffer_key: K,
+        cb_buffer_key: K,
+        cr_buffer_key: K
+    ) -> Self {
         let decoder = AVCodec::find_decoder_by_name(cstr!("h264")).unwrap();
 
         let options = AVDictionary::new(cstr!(""), cstr!(""), 0)
@@ -37,29 +48,49 @@ impl H264Decoder {
             },
 
             parser_context: AVCodecParserContext::find(decoder.id).unwrap(),
+            encoded_buffer_key,
+            y_buffer_key,
+            cb_buffer_key,
+            cr_buffer_key
         }
-    }
-}
-
-impl Default for H264Decoder {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
 #[async_trait]
-impl FrameProcessor for H264Decoder {
-    async fn process(&mut self, mut frame_data: FrameData) -> Option<FrameData> {
+impl<F, K> FrameProcessor<F> for H264Decoder<K>
+where
+    K: Send + Copy,
+    F: PullableFrameProperties<K, BytesMut> + Send + 'static,
+{
+    async fn process(&mut self, mut frame_data: F) -> Option<F> {
+        let timestamp = 0 as i64; // TODO: Extract timestamp from properties
+
+        let encoded_buffer = frame_data.pull(&self.encoded_buffer_key).unwrap();
+        let mut y_buffer = frame_data.pull(&self.y_buffer_key).unwrap();
+        let mut cb_buffer = frame_data.pull(&self.cb_buffer_key).unwrap();
+        let mut cr_buffer = frame_data.pull(&self.cr_buffer_key).unwrap();
+
+        let encoded_packets_buffer = &encoded_buffer[..encoded_buffer.len()];
+
         let decode_result = decode_to_yuv(
             &mut self.decode_context,
             &mut self.parser_context,
-            &mut frame_data,
+            timestamp,
+            encoded_packets_buffer,
+            &mut y_buffer,
+            &mut cb_buffer,
+            &mut cr_buffer
         );
 
         if let Err(drop_reason) = decode_result {
             debug!("Dropping frame, reason: {:?}", drop_reason);
-            frame_data.set_drop_reason(Some(drop_reason));
+            // TODO: Add error report
         }
+
+        frame_data.push(self.encoded_buffer_key, encoded_buffer);
+        frame_data.push(self.y_buffer_key, y_buffer);
+        frame_data.push(self.cb_buffer_key, cb_buffer);
+        frame_data.push(self.cr_buffer_key, cr_buffer);
 
         Some(frame_data)
     }
