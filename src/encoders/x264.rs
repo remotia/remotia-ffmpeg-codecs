@@ -91,6 +91,7 @@ pub struct X264EncoderPusher<K> {
     cr_buffer_key: K,
 }
 
+/*
 #[async_trait]
 impl<'a, F, K> FrameProcessor<F> for X264EncoderPusher<K>
 where
@@ -112,12 +113,14 @@ where
         Some(frame_data)
     }
 }
+*/
 
 pub struct X264EncoderPuller<K> {
     encode_context: Arc<Mutex<AVCodecContext>>,
     encoded_buffer_key: K,
 }
 
+/*
 #[async_trait]
 impl<'a, F, K> FrameProcessor<F> for X264EncoderPuller<K> where
     K: Send,
@@ -132,6 +135,7 @@ impl<'a, F, K> FrameProcessor<F> for X264EncoderPuller<K> where
         Some(frame_data)
     }
 }
+*/
 
 fn init_encoder(width: i32, height: i32, options: Options) -> AVCodecContext {
     let encoder = AVCodec::find_encoder_by_name(cstr!("libx264")).unwrap();
@@ -154,3 +158,4 @@ fn init_encoder(width: i32, height: i32, options: Options) -> AVCodecContext {
     encode_context.open(Some(options_dict)).unwrap();
     encode_context
 }
+

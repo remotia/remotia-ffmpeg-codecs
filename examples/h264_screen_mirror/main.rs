@@ -2,18 +2,26 @@ use clap::Parser;
 use remotia::{
     buffers::BufferAllocator,
     capture::scrap::ScrapFrameCapturer,
+    codecs::yuv::{rgba_to_yuv::RGBAToYUV420PConverter, yuv_to_rgba::YUV420PToRGBAConverter},
     pipeline::{component::Component, Pipeline},
-    processors::ticker::Ticker, codecs::yuv::{yuv_to_rgba::YUV420PToRGBAConverter, rgba_to_yuv::RGBAToYUV420PConverter},
+    processors::ticker::Ticker,
+    render::winit::WinitRenderer,
 };
 
-use crate::types::{FrameData, BufferType};
+use crate::types::{BufferType, FrameData};
 
 mod types;
 
 #[derive(Parser, Debug)]
 struct Args {
     #[arg(short, long, default_value_t = 60)]
-    framerate: u64
+    framerate: u64,
+
+    #[arg(long)]
+    width: u32,
+
+    #[arg(long)]
+    height: u32,
 }
 
 #[tokio::main]
@@ -35,6 +43,18 @@ async fn main() {
                     BufferType::RawFrameBuffer,
                     capturer.buffer_size(),
                 ))
+                .append(BufferAllocator::new(
+                    BufferType::YFrameBuffer,
+                    (args.width * args.height) as usize,
+                ))
+                .append(BufferAllocator::new(
+                    BufferType::CBFrameBuffer,
+                    ((args.width * args.height) / 4) as usize,
+                ))
+                .append(BufferAllocator::new(
+                    BufferType::CRFrameBuffer,
+                    ((args.width * args.height) / 4) as usize,
+                ))
                 .append(capturer)
                 .append(RGBAToYUV420PConverter::new(
                     BufferType::RawFrameBuffer,
@@ -42,6 +62,17 @@ async fn main() {
                     BufferType::CBFrameBuffer,
                     BufferType::CRFrameBuffer,
                 ))
+                .append(YUV420PToRGBAConverter::new(
+                    BufferType::YFrameBuffer,
+                    BufferType::CBFrameBuffer,
+                    BufferType::CRFrameBuffer,
+                    BufferType::RawFrameBuffer,
+                ))
+                .append(WinitRenderer::new(
+                    BufferType::RawFrameBuffer,
+                    args.width,
+                    args.height,
+                )),
         )
         .run();
 
@@ -49,4 +80,3 @@ async fn main() {
         handle.await.unwrap();
     }
 }
-
