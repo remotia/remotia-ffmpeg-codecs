@@ -1,12 +1,14 @@
+use std::io::Write;
+
+use bytes::BufMut;
 use log::debug;
+use remotia::buffers::BufferMut;
 use rsmpeg::{avcodec::AVCodecContext, error::RsmpegError};
 
 pub fn receive_encoded_packet(
     encode_context: &mut AVCodecContext,
-    output_buffer: &mut [u8],
-) -> usize {
-    let mut encoded_frame_length = 0;
-
+    output_buffer: &mut BufferMut,
+) {
     loop {
         let packet = match encode_context.receive_packet() {
             Ok(packet) => {
@@ -28,13 +30,6 @@ pub fn receive_encoded_packet(
 
         debug!("Encoded packet: {:?}", packet);
 
-        let start_index = encoded_frame_length;
-        let end_index = encoded_frame_length + data.len();
-
-        output_buffer[start_index..end_index].copy_from_slice(data);
-
-        encoded_frame_length = end_index;
+        output_buffer.put(data);
     }
-
-    encoded_frame_length
 }

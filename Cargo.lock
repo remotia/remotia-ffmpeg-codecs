@@ -168,17 +168,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "atty"
-version = "0.2.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9b39be18770d11421cdb1b9947a45dd3f37e93092cbf377614828a319d5fee8"
-dependencies = [
- "hermit-abi 0.1.19",
- "libc",
- "winapi 0.3.9",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -519,19 +508,6 @@ name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
-
-[[package]]
-name = "env_logger"
-version = "0.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a12e6657c4c97ebab115a42dcee77225f7f482cdd841cf7088c657a42e9e00e7"
-dependencies = [
- "atty",
- "humantime",
- "log",
- "regex",
- "termcolor",
-]
 
 [[package]]
 name = "env_logger"
@@ -1350,6 +1326,7 @@ dependencies = [
  "bytes",
  "log",
  "remotia-core",
+ "tokio",
 ]
 
 [[package]]
@@ -1358,7 +1335,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
- "env_logger 0.10.0",
+ "env_logger",
  "log",
  "scrap",
  "tokio",
@@ -1370,8 +1347,8 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
- "env_logger 0.9.3",
  "log",
+ "remotia-buffer-utils",
  "remotia-core",
  "scrap",
 ]
@@ -1390,7 +1367,7 @@ name = "remotia-core-renderers"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "env_logger 0.10.0",
+ "env_logger",
  "log",
  "pixels",
  "remotia-buffer-utils",
@@ -1406,7 +1383,7 @@ dependencies = [
  "bytes",
  "clap",
  "cstr",
- "env_logger 0.10.0",
+ "env_logger",
  "log",
  "remotia",
  "rsmpeg",

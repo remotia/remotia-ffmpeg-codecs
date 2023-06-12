@@ -1,5 +1,10 @@
 {
+    "rust-analyzer.showUnlinkedFileNotification": false,
     "rust-analyzer.cargo.extraEnv": {
         "FFMPEG_PKG_CONFIG_PATH": "${workspaceFolder}/tmp/ffmpeg_build/lib/pkgconfig"
-    }
+    },
+    "rust-analyzer.server.extraEnv": {
+        "FFMPEG_PKG_CONFIG_PATH": "${workspaceFolder}/tmp/ffmpeg_build/lib/pkgconfig"
+    },
+    "rust-analyzer.cargo.features": "all"
 }

@@ -6,7 +6,9 @@ use bytes::BytesMut;
 use remotia::traits::{BorrowFrameProperties, BorrowMutFrameProperties, FrameProcessor};
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext},
+    avutil::AVFrame,
     ffi,
+    swscale::SwsContext,
 };
 
 use async_trait::async_trait;
@@ -16,19 +18,18 @@ use tokio::sync::Mutex;
 
 use super::{
     options::Options,
-    utils::frame_builders::yuv420p::YUV420PAVFrameBuilder,
-    utils::{pull::pull_packet, push::push_frame},
+    utils::{push::push_frame, avframe::send_avframe},
+    utils::{frame_builders::yuv420p::YUV420PAVFrameBuilder, packet::receive_encoded_packet},
 };
 
 pub struct X264Encoder<K: Copy> {
     encode_context: Arc<Mutex<AVCodecContext>>,
+    scaling_context: Arc<Mutex<SwsContext>>,
 
     width: i32,
     height: i32,
 
-    y_buffer_key: K,
-    cb_buffer_key: K,
-    cr_buffer_key: K,
+    rgba_buffer_key: K,
     encoded_buffer_key: K,
 
     options: Options,
@@ -39,39 +40,42 @@ pub struct X264Encoder<K: Copy> {
 unsafe impl<K: Copy> Send for X264Encoder<K> {}
 
 impl<K: Copy> X264Encoder<K> {
-    pub fn new(
-        width: i32,
-        height: i32,
-        y_buffer_key: K,
-        cb_buffer_key: K,
-        cr_buffer_key: K,
-        encoded_buffer_key: K,
-        options: Options,
-    ) -> Self {
+    pub fn new(width: i32, height: i32, rgba_buffer_key: K, encoded_buffer_key: K, options: Options) -> Self {
         let encoder = init_encoder(width, height, options.clone());
+        let scaling_context = Arc::new(Mutex::new(
+            SwsContext::get_context(
+                encoder.width,
+                encoder.height,
+                rsmpeg::ffi::AVPixelFormat_AV_PIX_FMT_RGBA,
+                encoder.width,
+                encoder.height,
+                encoder.pix_fmt,
+                rsmpeg::ffi::SWS_BILINEAR,
+            )
+            .unwrap(),
+        ));
+
         let encode_context = Arc::new(Mutex::new(encoder));
 
         X264Encoder {
+            encode_context,
+            scaling_context,
+
             width,
             height,
 
-            y_buffer_key,
-            cb_buffer_key,
-            cr_buffer_key,
+            rgba_buffer_key,
             encoded_buffer_key,
 
             options,
-            encode_context,
         }
     }
 
     pub fn pusher(&self) -> X264EncoderPusher<K> {
         X264EncoderPusher {
             encode_context: self.encode_context.clone(),
-            yuv420_avframe_builder: YUV420PAVFrameBuilder::new(),
-            y_buffer_key: self.y_buffer_key,
-            cb_buffer_key: self.cb_buffer_key,
-            cr_buffer_key: self.cr_buffer_key,
+            scaling_context: self.scaling_context.clone(),
+            rgba_buffer_key: self.rgba_buffer_key,
         }
     }
 
@@ -85,10 +89,9 @@ impl<K: Copy> X264Encoder<K> {
 
 pub struct X264EncoderPusher<K> {
     encode_context: Arc<Mutex<AVCodecContext>>,
-    yuv420_avframe_builder: YUV420PAVFrameBuilder,
-    y_buffer_key: K,
-    cb_buffer_key: K,
-    cr_buffer_key: K,
+    scaling_context: Arc<Mutex<SwsContext>>,
+
+    rgba_buffer_key: K,
 }
 
 #[async_trait]
@@ -98,16 +101,40 @@ where
     F: BorrowFrameProperties<K, BytesMut> + Send + 'static,
 {
     async fn process(&mut self, frame_data: F) -> Option<F> {
-        let mut encode_context = self.encode_context.lock().await;
+        let pts = 0 as i64; // TODO: Implement timestamp
 
-        push_frame(
-            &mut encode_context,
-            &mut self.yuv420_avframe_builder,
-            0 as i64,
-            frame_data.get_ref(&self.y_buffer_key).unwrap(),
-            frame_data.get_ref(&self.cb_buffer_key).unwrap(),
-            frame_data.get_ref(&self.cr_buffer_key).unwrap(),
-        );
+        let mut encode_context = self.encode_context.lock().await;
+        let mut scaling_context = self.scaling_context.lock().await;
+
+        let mut rgba_frame = AVFrame::new();
+        rgba_frame.set_format(rsmpeg::ffi::AVPixelFormat_AV_PIX_FMT_RGBA);
+        rgba_frame.set_width(encode_context.width);
+        rgba_frame.set_height(encode_context.height);
+        rgba_frame.set_pts(pts);
+        rgba_frame.alloc_buffer().unwrap();
+        let linesize = rgba_frame.linesize;
+        let height = encode_context.height as usize;
+
+        log::debug!("Linesize: {:?}", linesize);
+        log::debug!("Height: {}", height);
+
+        let linesize = linesize[0] as usize;
+        let data = unsafe { std::slice::from_raw_parts_mut(rgba_frame.data[0], height * linesize) };
+
+        log::debug!("Data len: {}", data.len());
+
+        data.copy_from_slice(frame_data.get_ref(&self.rgba_buffer_key).unwrap());
+
+        let mut yuv_frame = AVFrame::new();
+        yuv_frame.set_format(rsmpeg::ffi::AVPixelFormat_AV_PIX_FMT_YUV420P);
+        yuv_frame.set_width(encode_context.width);
+        yuv_frame.set_height(encode_context.height);
+        yuv_frame.set_pts(pts);
+        yuv_frame.alloc_buffer().unwrap();
+
+        scaling_context.scale_frame(&rgba_frame, 0, rgba_frame.height, &mut yuv_frame).unwrap();
+
+        send_avframe(&mut encode_context, yuv_frame);
 
         Some(frame_data)
     }
@@ -126,10 +153,7 @@ where
 {
     async fn process(&mut self, mut frame_data: F) -> Option<F> {
         let mut encode_context = self.encode_context.lock().await;
-        pull_packet(
-            &mut encode_context,
-            frame_data.get_mut_ref(&self.encoded_buffer_key).unwrap(),
-        );
+        receive_encoded_packet(&mut encode_context, frame_data.get_mut_ref(&self.encoded_buffer_key).unwrap());
         Some(frame_data)
     }
 }
@@ -139,10 +163,7 @@ fn init_encoder(width: i32, height: i32, options: Options) -> AVCodecContext {
     let mut encode_context = AVCodecContext::new(&encoder);
     encode_context.set_width(width);
     encode_context.set_height(height);
-    encode_context.set_time_base(ffi::AVRational {
-        num: 1,
-        den: 60 * 1000,
-    });
+    encode_context.set_time_base(ffi::AVRational { num: 1, den: 60 * 1000 });
     encode_context.set_framerate(ffi::AVRational { num: 60, den: 1 });
     encode_context.set_pix_fmt(rsmpeg::ffi::AVPixelFormat_AV_PIX_FMT_YUV420P);
     let mut encode_context = unsafe {
