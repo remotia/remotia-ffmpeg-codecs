@@ -1,14 +1,15 @@
-use clap::{Parser, error};
+use clap::Parser;
 use remotia::{
     buffers::pool_registry::PoolRegistry,
     capture::scrap::ScrapFrameCapturer,
     pipeline::{component::Component, Pipeline},
-    processors::{ticker::Ticker, error_switch::OnErrorSwitch, functional::Function},
+    processors::{error_switch::OnErrorSwitch, functional::Function, ticker::Ticker},
     render::winit::WinitRenderer,
 };
 use remotia_ffmpeg_codecs::{
     decoders::h264::H264Decoder,
     encoders::{options::Options, x264::X264Encoder},
+    ffi,
 };
 
 use crate::types::{BufferType::*, Error::*, FrameData};
@@ -63,6 +64,8 @@ async fn main() {
         DecodedRGBAFrameBuffer,
         NoFrame,
         CodecError,
+        ffi::AVPixelFormat_AV_PIX_FMT_YUV420P,
+        ffi::AVPixelFormat_AV_PIX_FMT_BGRA,
     );
 
     let mut error_pipeline = Pipeline::<FrameData>::singleton(
@@ -73,26 +76,26 @@ async fn main() {
             }))
             .append(registry.get(CapturedRGBAFrameBuffer).redeemer().soft())
             .append(registry.get(EncodedFrameBuffer).redeemer().soft())
-            .append(registry.get(DecodedRGBAFrameBuffer).redeemer().soft())
-    ).feedable();
+            .append(registry.get(DecodedRGBAFrameBuffer).redeemer().soft()),
+    )
+    .feedable();
 
-    let pipeline = Pipeline::<FrameData>::new()
-        .link(
-            Component::new()
-                .append(Ticker::new(1000 / args.framerate))
-                .append(registry.get(CapturedRGBAFrameBuffer).borrower())
-                .append(capturer)
-                .append(encoder.pusher())
-                .append(registry.get(CapturedRGBAFrameBuffer).redeemer())
-                .append(registry.get(EncodedFrameBuffer).borrower())
-                .append(encoder.puller())
-                .append(registry.get(DecodedRGBAFrameBuffer).borrower())
-                .append(decoder)
-                .append(registry.get(EncodedFrameBuffer).redeemer())
-                .append(OnErrorSwitch::new(&mut error_pipeline))
-                .append(WinitRenderer::new(DecodedRGBAFrameBuffer, width as u32, height as u32))
-                .append(registry.get(DecodedRGBAFrameBuffer).redeemer()),
-        );
+    let pipeline = Pipeline::<FrameData>::new().link(
+        Component::new()
+            .append(Ticker::new(1000 / args.framerate))
+            .append(registry.get(CapturedRGBAFrameBuffer).borrower())
+            .append(capturer)
+            .append(encoder.pusher())
+            .append(registry.get(CapturedRGBAFrameBuffer).redeemer())
+            .append(registry.get(EncodedFrameBuffer).borrower())
+            .append(encoder.puller())
+            .append(registry.get(DecodedRGBAFrameBuffer).borrower())
+            .append(decoder)
+            .append(registry.get(EncodedFrameBuffer).redeemer())
+            .append(OnErrorSwitch::new(&mut error_pipeline))
+            .append(WinitRenderer::new(DecodedRGBAFrameBuffer, width as u32, height as u32))
+            .append(registry.get(DecodedRGBAFrameBuffer).redeemer()),
+    );
 
     let mut handles = Vec::new();
     handles.extend(error_pipeline.run());

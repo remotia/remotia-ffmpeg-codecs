@@ -1,4 +1,4 @@
-use bytes::{BufMut};
+use bytes::BufMut;
 use log::debug;
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext, AVCodecParserContext},
@@ -11,12 +11,14 @@ use cstr::cstr;
 
 use remotia::{
     buffers::BufferMut,
-    traits::{FrameError, FrameProcessor, BorrowMutFrameProperties},
+    traits::{BorrowMutFrameProperties, FrameError, FrameProcessor},
 };
 
 use async_trait::async_trait;
 
 use super::utils::packet::parse_packets;
+
+use crate::ffi;
 
 pub struct H264Decoder<K, E> {
     decode_context: AVCodecContext,
@@ -34,23 +36,34 @@ pub struct H264Decoder<K, E> {
 unsafe impl<K, E> Send for H264Decoder<K, E> {}
 
 impl<K, E> H264Decoder<K, E> {
-    pub fn new(width: i32, height: i32, encoded_buffer_key: K, rgba_buffer_key: K, drain_error: E, codec_error: E) -> Self {
+    pub fn new(
+        width: i32,
+        height: i32,
+        encoded_buffer_key: K,
+        rgba_buffer_key: K,
+        drain_error: E,
+        codec_error: E,
+        input_pixel_format: ffi::AVPixelFormat,
+        output_pixel_format: ffi::AVPixelFormat
+    ) -> Self {
         let decoder = AVCodec::find_decoder_by_name(cstr!("h264")).unwrap();
 
         let scaling_context = {
             SwsContext::get_context(
                 width,
                 height,
-                rsmpeg::ffi::AVPixelFormat_AV_PIX_FMT_YUV420P,
+                input_pixel_format,
                 width,
                 height,
-                rsmpeg::ffi::AVPixelFormat_AV_PIX_FMT_RGBA,
-                rsmpeg::ffi::SWS_BILINEAR,
+                output_pixel_format,
+                ffi::SWS_BILINEAR,
             )
             .unwrap()
         };
 
-        let options = AVDictionary::new(cstr!(""), cstr!(""), 0).set(cstr!("threads"), cstr!("4"), 0).set(cstr!("thread_type"), cstr!("slice"), 0);
+        let options = AVDictionary::new(cstr!(""), cstr!(""), 0)
+            .set(cstr!("threads"), cstr!("4"), 0)
+            .set(cstr!("thread_type"), cstr!("slice"), 0);
 
         H264Decoder {
             decode_context: {
@@ -86,7 +99,12 @@ where
 
         let encoded_packets_buffer = &encoded_buffer[..encoded_buffer.len()];
 
-        let parse_result = parse_packets(&mut self.decode_context, &mut self.parser_context, encoded_packets_buffer, timestamp);
+        let parse_result = parse_packets(
+            &mut self.decode_context,
+            &mut self.parser_context,
+            encoded_packets_buffer,
+            timestamp,
+        );
 
         if let Err(error) = parse_result {
             debug!("Dropping frame, reason: {:?}", error);
@@ -104,7 +122,9 @@ where
                     rgba_frame.set_pts(yuv_frame.pts);
                     rgba_frame.alloc_buffer().unwrap();
 
-                    self.scaling_context.scale_frame(&yuv_frame, 0, yuv_frame.height, &mut rgba_frame).unwrap();
+                    self.scaling_context
+                        .scale_frame(&yuv_frame, 0, yuv_frame.height, &mut rgba_frame)
+                        .unwrap();
 
                     let linesize = rgba_frame.linesize;
                     let height = rgba_frame.height as usize;

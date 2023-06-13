@@ -7,7 +7,6 @@ use remotia::traits::{BorrowFrameProperties, BorrowMutFrameProperties, FrameProc
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext},
     avutil::AVFrame,
-    ffi,
     swscale::SwsContext,
 };
 
@@ -15,6 +14,8 @@ use async_trait::async_trait;
 
 use cstr::cstr;
 use tokio::sync::Mutex;
+
+use crate::ffi;
 
 use super::{
     options::Options,
@@ -46,11 +47,11 @@ impl<K: Copy> X264Encoder<K> {
             SwsContext::get_context(
                 encoder.width,
                 encoder.height,
-                rsmpeg::ffi::AVPixelFormat_AV_PIX_FMT_RGBA,
+                ffi::AVPixelFormat_AV_PIX_FMT_RGBA,
                 encoder.width,
                 encoder.height,
                 encoder.pix_fmt,
-                rsmpeg::ffi::SWS_BILINEAR,
+                ffi::SWS_BILINEAR,
             )
             .unwrap(),
         ));
@@ -121,7 +122,7 @@ where
         data.copy_from_slice(frame_data.get_ref(&self.rgba_buffer_key).unwrap());
 
         let mut yuv_frame = AVFrame::new();
-        yuv_frame.set_format(rsmpeg::ffi::AVPixelFormat_AV_PIX_FMT_YUV420P);
+        yuv_frame.set_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P);
         yuv_frame.set_width(encode_context.width);
         yuv_frame.set_height(encode_context.height);
         yuv_frame.set_pts(pts);
@@ -160,7 +161,7 @@ fn init_encoder(width: i32, height: i32, options: Options) -> AVCodecContext {
     encode_context.set_height(height);
     encode_context.set_time_base(ffi::AVRational { num: 1, den: 60 * 1000 });
     encode_context.set_framerate(ffi::AVRational { num: 60, den: 1 });
-    encode_context.set_pix_fmt(rsmpeg::ffi::AVPixelFormat_AV_PIX_FMT_YUV420P);
+    encode_context.set_pix_fmt(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P);
     let mut encode_context = unsafe {
         let raw_encode_context = encode_context.into_raw().as_ptr();
         AVCodecContext::from_raw(NonNull::new(raw_encode_context).unwrap())
