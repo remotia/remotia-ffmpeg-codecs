@@ -1,43 +1,56 @@
-use bytes::BytesMut;
+use bytes::{BufMut, BytesMut};
 use log::debug;
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext, AVCodecParserContext},
-    avutil::AVDictionary,
+    avutil::{AVDictionary, AVFrame},
+    error::RsmpegError,
+    swscale::SwsContext,
 };
 
 use cstr::cstr;
 
-use remotia::traits::{FrameProcessor, PullableFrameProperties};
+use remotia::{
+    buffers::BufferMut,
+    traits::{FrameError, FrameProcessor, PullableFrameProperties, BorrowMutFrameProperties},
+};
 
 use async_trait::async_trait;
 
-use super::utils::decode_to_yuv;
+use super::utils::packet::parse_packets;
 
-pub struct H264Decoder<K> {
+pub struct H264Decoder<K, E> {
     decode_context: AVCodecContext,
+    scaling_context: SwsContext,
     parser_context: AVCodecParserContext,
 
     encoded_buffer_key: K,
-    y_buffer_key: K,
-    cb_buffer_key: K,
-    cr_buffer_key: K
+    rgba_buffer_key: K,
+
+    drain_error: E,
+    codec_error: E,
 }
 
 // TODO: Fix all those unsafe impl
-unsafe impl<K> Send for H264Decoder<K> {}
+unsafe impl<K, E> Send for H264Decoder<K, E> {}
 
-impl<K> H264Decoder<K> {
-    pub fn new(
-        encoded_buffer_key: K,
-        y_buffer_key: K,
-        cb_buffer_key: K,
-        cr_buffer_key: K
-    ) -> Self {
+impl<K, E> H264Decoder<K, E> {
+    pub fn new(width: i32, height: i32, encoded_buffer_key: K, rgba_buffer_key: K, drain_error: E, codec_error: E) -> Self {
         let decoder = AVCodec::find_decoder_by_name(cstr!("h264")).unwrap();
 
-        let options = AVDictionary::new(cstr!(""), cstr!(""), 0)
-            .set(cstr!("threads"), cstr!("4"), 0)
-            .set(cstr!("thread_type"), cstr!("slice"), 0);
+        let scaling_context = {
+            SwsContext::get_context(
+                width,
+                height,
+                rsmpeg::ffi::AVPixelFormat_AV_PIX_FMT_YUV420P,
+                width,
+                height,
+                rsmpeg::ffi::AVPixelFormat_AV_PIX_FMT_RGBA,
+                rsmpeg::ffi::SWS_BILINEAR,
+            )
+            .unwrap()
+        };
+
+        let options = AVDictionary::new(cstr!(""), cstr!(""), 0).set(cstr!("threads"), cstr!("4"), 0).set(cstr!("thread_type"), cstr!("slice"), 0);
 
         H264Decoder {
             decode_context: {
@@ -47,50 +60,82 @@ impl<K> H264Decoder<K> {
                 decode_context
             },
 
+            scaling_context,
+
             parser_context: AVCodecParserContext::find(decoder.id).unwrap(),
             encoded_buffer_key,
-            y_buffer_key,
-            cb_buffer_key,
-            cr_buffer_key
+            rgba_buffer_key,
+
+            drain_error,
+            codec_error
         }
     }
 }
 
 #[async_trait]
-impl<F, K> FrameProcessor<F> for H264Decoder<K>
+impl<F, K, E> FrameProcessor<F> for H264Decoder<K, E>
 where
     K: Send + Copy,
-    F: PullableFrameProperties<K, BytesMut> + Send + 'static,
+    E: Send + Copy,
+    F: BorrowMutFrameProperties<K, BufferMut> + FrameError<E> + Send + 'static,
 {
     async fn process(&mut self, mut frame_data: F) -> Option<F> {
         let timestamp = 0 as i64; // TODO: Extract timestamp from properties
 
-        let encoded_buffer = frame_data.pull(&self.encoded_buffer_key).unwrap();
-        let mut y_buffer = frame_data.pull(&self.y_buffer_key).unwrap();
-        let mut cb_buffer = frame_data.pull(&self.cb_buffer_key).unwrap();
-        let mut cr_buffer = frame_data.pull(&self.cr_buffer_key).unwrap();
+        let encoded_buffer = frame_data.get_mut_ref(&self.encoded_buffer_key).unwrap();
 
         let encoded_packets_buffer = &encoded_buffer[..encoded_buffer.len()];
 
-        let decode_result = decode_to_yuv(
-            &mut self.decode_context,
-            &mut self.parser_context,
-            timestamp,
-            encoded_packets_buffer,
-            &mut y_buffer,
-            &mut cb_buffer,
-            &mut cr_buffer
-        );
+        let parse_result = parse_packets(&mut self.decode_context, &mut self.parser_context, encoded_packets_buffer, timestamp);
 
-        if let Err(drop_reason) = decode_result {
-            debug!("Dropping frame, reason: {:?}", drop_reason);
-            // TODO: Add error report
+        if let Err(error) = parse_result {
+            debug!("Dropping frame, reason: {:?}", error);
+            frame_data.report_error(self.codec_error);
+            return Some(frame_data);
         }
 
-        frame_data.push(self.encoded_buffer_key, encoded_buffer);
-        frame_data.push(self.y_buffer_key, y_buffer);
-        frame_data.push(self.cb_buffer_key, cb_buffer);
-        frame_data.push(self.cr_buffer_key, cr_buffer);
+        loop {
+            match self.decode_context.receive_frame() {
+                Ok(yuv_frame) => {
+                    log::trace!("Received AVFrame: {:?}", yuv_frame);
+
+                    let mut rgba_frame = AVFrame::new();
+                    rgba_frame.set_format(rsmpeg::ffi::AVPixelFormat_AV_PIX_FMT_RGBA);
+                    rgba_frame.set_width(yuv_frame.width);
+                    rgba_frame.set_height(yuv_frame.height);
+                    rgba_frame.set_pts(yuv_frame.pts);
+                    rgba_frame.alloc_buffer().unwrap();
+
+                    self.scaling_context.scale_frame(&yuv_frame, 0, yuv_frame.height, &mut rgba_frame).unwrap();
+
+                    let linesize = rgba_frame.linesize;
+                    let height = rgba_frame.height as usize;
+
+                    log::debug!("Linesize: {:?}", linesize);
+                    log::debug!("Height: {}", height);
+
+                    let linesize = linesize[0] as usize;
+                    let data = unsafe { std::slice::from_raw_parts(rgba_frame.data[0], height * linesize) };
+
+                    log::debug!("Data len: {}", data.len());
+
+                    let rgba_buffer = frame_data.get_mut_ref(&self.rgba_buffer_key).unwrap();
+                    rgba_buffer.put(data);
+
+                    log::debug!("RGBA buffer len: {}", rgba_buffer.len());
+
+                    break;
+                }
+                Err(RsmpegError::DecoderDrainError) => {
+                    debug!("No frames to be pulled");
+                    break;
+                }
+                Err(RsmpegError::DecoderFlushedError) => {
+                    panic!("Decoder has been flushed unexpectedly");
+                }
+                Err(e) => panic!("{:?}", e),
+            }
+        }
 
         Some(frame_data)
     }

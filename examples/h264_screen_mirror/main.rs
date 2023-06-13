@@ -2,7 +2,6 @@ use clap::Parser;
 use remotia::{
     buffers::pool_registry::PoolRegistry,
     capture::scrap::ScrapFrameCapturer,
-    codecs::yuv::{rgba_to_yuv::RGBAToYUV420PConverter, yuv_to_rgba::YUV420PToRGBAConverter},
     pipeline::{component::Component, Pipeline},
     processors::ticker::Ticker,
     render::winit::WinitRenderer,
@@ -12,7 +11,7 @@ use remotia_ffmpeg_codecs::{
     encoders::{options::Options, x264::X264Encoder},
 };
 
-use crate::types::{BufferType::*, FrameData};
+use crate::types::{BufferType::*, Error::*, FrameData};
 
 mod types;
 
@@ -39,9 +38,15 @@ async fn main() {
     let height = capturer.height() as usize;
     let pixels_count = width * height;
     let mut registry = PoolRegistry::new();
-    registry.register(CapturedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4).await;
-    registry.register(EncodedFrameBuffer, POOLS_SIZE, pixels_count).await;
-    registry.register(DecodedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4).await;
+    registry
+        .register(CapturedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4)
+        .await;
+    registry
+        .register(EncodedFrameBuffer, POOLS_SIZE, pixels_count)
+        .await;
+    registry
+        .register(DecodedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4)
+        .await;
 
     let encoder = X264Encoder::new(
         width as i32,
@@ -51,7 +56,14 @@ async fn main() {
         Options::new().set("crf", "26").set("tune", "zerolatency"),
     );
 
-    let decoder = H264Decoder::new(EncodedFrameBuffer, DecodedYBuffer, DecodedCBBuffer, DecodedCRBuffer);
+    let decoder = H264Decoder::new(
+        width as i32,
+        height as i32,
+        EncodedFrameBuffer,
+        DecodedRGBAFrameBuffer,
+        NoFrame,
+        CodecError,
+    );
 
     let handles = Pipeline::<FrameData>::new()
         .link(
@@ -59,38 +71,15 @@ async fn main() {
                 .append(Ticker::new(1000 / args.framerate))
                 .append(registry.get(CapturedRGBAFrameBuffer).borrower())
                 .append(capturer)
-                // .append(registry.get(YBuffer).borrower())
-                // .append(registry.get(CBBuffer).borrower())
-                // .append(registry.get(CRBuffer).borrower())
-                // .append(RGBAToYUV420PConverter::new(width, CapturedRGBAFrameBuffer, YBuffer, CBBuffer, CRBuffer))
-                // .append(registry.get(CapturedRGBAFrameBuffer).redeemer())
-
                 .append(encoder.pusher())
                 .append(registry.get(CapturedRGBAFrameBuffer).redeemer())
-                // .append(registry.get(YBuffer).redeemer())
-                // .append(registry.get(CBBuffer).redeemer())
-                // .append(registry.get(CRBuffer).redeemer())
                 .append(registry.get(EncodedFrameBuffer).borrower())
                 .append(encoder.puller())
-                // .append(registry.get(DecodedYBuffer).borrower())
-                // .append(registry.get(DecodedCBBuffer).borrower())
-                // .append(registry.get(DecodedCRBuffer).borrower())
-                // .append(decoder)
+                .append(registry.get(DecodedRGBAFrameBuffer).borrower())
+                .append(decoder)
                 .append(registry.get(EncodedFrameBuffer).redeemer())
-                // .append(registry.get(DecodedRGBAFrameBuffer).borrower())
-                // .append(YUV420PToRGBAConverter::new(DecodedYBuffer, DecodedCBBuffer, DecodedCRBuffer, DecodedRGBAFrameBuffer))
-
-                // .append(registry.get(DecodedRGBAFrameBuffer).borrower())
-                // .append(YUV420PToRGBAConverter::new(width, YBuffer, CBBuffer, CRBuffer, DecodedRGBAFrameBuffer))
-                // .append(registry.get(YBuffer).redeemer())
-                // .append(registry.get(CBBuffer).redeemer())
-                // .append(registry.get(CRBuffer).redeemer())
-
-                // .append(registry.get(DecodedYBuffer).redeemer())
-                // .append(registry.get(DecodedCBBuffer).redeemer())
-                // .append(registry.get(DecodedCRBuffer).redeemer())
-                // .append(WinitRenderer::new(DecodedRGBAFrameBuffer, width as u32, height as u32))
-                // .append(registry.get(DecodedRGBAFrameBuffer).redeemer()),
+                .append(WinitRenderer::new(DecodedRGBAFrameBuffer, width as u32, height as u32))
+                .append(registry.get(DecodedRGBAFrameBuffer).redeemer()),
         )
         .run();
 

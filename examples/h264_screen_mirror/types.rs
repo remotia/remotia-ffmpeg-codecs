@@ -1,24 +1,26 @@
 use std::collections::HashMap;
 
 use bytes::BytesMut;
-use remotia::traits::{BorrowableFrameProperties, PullableFrameProperties, BorrowFrameProperties, BorrowMutFrameProperties};
+use remotia::traits::{BorrowableFrameProperties, PullableFrameProperties, BorrowFrameProperties, BorrowMutFrameProperties, FrameError};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BufferType {
     CapturedRGBAFrameBuffer,
-    YBuffer,
-    CBBuffer,
-    CRBuffer,
     EncodedFrameBuffer,
-    DecodedYBuffer,
-    DecodedCBBuffer,
-    DecodedCRBuffer,
     DecodedRGBAFrameBuffer,
+}
+
+
+#[derive(Clone, Copy, Debug)]
+pub enum Error {
+    NoFrame,
+    CodecError,
 }
 
 #[derive(Default, Debug)]
 pub struct FrameData {
     buffers: HashMap<BufferType, BytesMut>,
+    error: Option<Error>
 }
 
 impl BorrowableFrameProperties<BufferType, BytesMut> for FrameData {
@@ -58,6 +60,16 @@ impl BorrowFrameProperties<BufferType, BytesMut> for FrameData {
 impl BorrowMutFrameProperties<BufferType, BytesMut> for FrameData {
     fn get_mut_ref(&mut self, key: &BufferType) -> Option<&mut BytesMut> {
         self.buffers.get_mut(key)
+    }
+}
+
+impl FrameError<Error> for FrameData {
+    fn report_error(&mut self, error: Error) {
+        self.error = Some(error);
+    }
+
+    fn get_error(&self) -> Option<Error> {
+        self.error
     }
 }
 

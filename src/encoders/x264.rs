@@ -18,8 +18,8 @@ use tokio::sync::Mutex;
 
 use super::{
     options::Options,
-    utils::{push::push_frame, avframe::send_avframe},
-    utils::{frame_builders::yuv420p::YUV420PAVFrameBuilder, packet::receive_encoded_packet},
+    utils::{avframe::send_avframe},
+    utils::{packet::receive_encoded_packet},
 };
 
 pub struct X264Encoder<K: Copy> {
@@ -115,13 +115,8 @@ where
         let linesize = rgba_frame.linesize;
         let height = encode_context.height as usize;
 
-        log::debug!("Linesize: {:?}", linesize);
-        log::debug!("Height: {}", height);
-
         let linesize = linesize[0] as usize;
         let data = unsafe { std::slice::from_raw_parts_mut(rgba_frame.data[0], height * linesize) };
-
-        log::debug!("Data len: {}", data.len());
 
         data.copy_from_slice(frame_data.get_ref(&self.rgba_buffer_key).unwrap());
 

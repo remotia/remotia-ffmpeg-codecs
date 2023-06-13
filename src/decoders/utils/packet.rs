@@ -9,7 +9,7 @@ pub fn parse_packets(
     mut parser_context: &mut AVCodecParserContext,
     input_buffer: &[u8],
     timestamp: i64,
-) -> Option<()> {
+) -> Result<(), ()> {
     let mut packet = AVPacket::new();
     let mut parsed_offset = 0;
 
@@ -60,7 +60,7 @@ pub fn parse_packets(
                 }
                 Err(e) => {
                     debug!("Error on send packet: {}", e);
-                    return Some(());
+                    return Err(());
                 }
             }
 
@@ -74,5 +74,5 @@ pub fn parse_packets(
         parsed_offset += offset;
     }
 
-    None
+    Ok(()) 
 }
