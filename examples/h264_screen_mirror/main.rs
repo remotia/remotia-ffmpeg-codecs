@@ -63,14 +63,17 @@ async fn main() {
 
     let (decoder_pusher, decoder_puller) = DecoderBuilder::new()
         .codec_id("h264")
-        .width(width as i32)
-        .height(height as i32)
         .encoded_buffer_key(EncodedFrameBuffer)
         .decoded_buffer_key(DecodedRGBAFrameBuffer)
+        .scaler(ScalerBuilder::new()
+            .input_width(width as i32)
+            .input_height(height as i32)
+            .input_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
+            .output_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_BGRA)
+            .build()
+        )
         .drain_error(NoFrame)
         .codec_error(CodecError)
-        .codec_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
-        .output_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_BGRA)
         .build();
 
     let mut error_pipeline = Pipeline::<FrameData>::singleton(

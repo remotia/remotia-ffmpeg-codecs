@@ -99,6 +99,16 @@ impl Scaler {
         scaled_frame.set_pts(input_frame.pts);
     }
 
+    pub fn scale_input(&mut self, input_frame: &AVFrame) {
+        let scaled_frame = &mut self.scaled_frame;
+
+        self.sws_context
+            .scale_frame(input_frame, 0, input_frame.height, scaled_frame)
+            .unwrap();
+
+        scaled_frame.set_pts(input_frame.pts);
+    }
+
     pub fn input_frame(&self) -> &AVFrame {
         &self.input_frame
     }

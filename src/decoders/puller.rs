@@ -2,12 +2,7 @@ use std::sync::Arc;
 
 use bytes::BufMut;
 use log::debug;
-use rsmpeg::{
-    avcodec::{AVCodecContext},
-    avutil::{AVFrame},
-    error::RsmpegError,
-    swscale::SwsContext,
-};
+use rsmpeg::{avcodec::AVCodecContext, error::RsmpegError};
 
 use remotia::{
     buffers::BufferMut,
@@ -17,13 +12,13 @@ use remotia::{
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 
+use crate::scaling::Scaler;
+
 pub struct DecoderPuller<K, E> {
     pub(super) decode_context: Arc<Mutex<AVCodecContext>>,
-    pub(super) scaling_context: SwsContext,
+    pub(super) scaler: Scaler,
     pub(super) decoded_buffer_key: K,
     pub(super) drain_error: E,
-
-    pub(super) output_avframe: AVFrame,
 }
 
 #[async_trait]
@@ -38,12 +33,10 @@ where
             let mut decode_context = self.decode_context.lock().await;
             match decode_context.receive_frame() {
                 Ok(codec_avframe) => {
-                    let output_avframe = &mut self.output_avframe;
-                    output_avframe.set_pts(codec_avframe.pts);
+                    self.scaler.scale_input(&codec_avframe);
 
-                    self.scaling_context
-                        .scale_frame(&codec_avframe, 0, codec_avframe.height, output_avframe)
-                        .unwrap();
+                    let output_avframe = &mut self.scaler.scaled_frame_mut();
+                    output_avframe.set_pts(codec_avframe.pts);
 
                     let linesize = output_avframe.linesize;
                     let height = output_avframe.height as usize;
