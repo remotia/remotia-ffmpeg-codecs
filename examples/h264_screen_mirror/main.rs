@@ -1,9 +1,9 @@
-use clap::Parser;
+use clap::{Parser, error};
 use remotia::{
     buffers::pool_registry::PoolRegistry,
     capture::scrap::ScrapFrameCapturer,
     pipeline::{component::Component, Pipeline},
-    processors::ticker::Ticker,
+    processors::{ticker::Ticker, error_switch::OnErrorSwitch, functional::Function},
     render::winit::WinitRenderer,
 };
 use remotia_ffmpeg_codecs::{
@@ -65,7 +65,18 @@ async fn main() {
         CodecError,
     );
 
-    let handles = Pipeline::<FrameData>::new()
+    let mut error_pipeline = Pipeline::<FrameData>::singleton(
+        Component::new()
+            .append(Function::new(|fd| {
+                log::warn!("Dropped frame");
+                Some(fd)
+            }))
+            .append(registry.get(CapturedRGBAFrameBuffer).redeemer().soft())
+            .append(registry.get(EncodedFrameBuffer).redeemer().soft())
+            .append(registry.get(DecodedRGBAFrameBuffer).redeemer().soft())
+    ).feedable();
+
+    let pipeline = Pipeline::<FrameData>::new()
         .link(
             Component::new()
                 .append(Ticker::new(1000 / args.framerate))
@@ -78,10 +89,14 @@ async fn main() {
                 .append(registry.get(DecodedRGBAFrameBuffer).borrower())
                 .append(decoder)
                 .append(registry.get(EncodedFrameBuffer).redeemer())
+                .append(OnErrorSwitch::new(&mut error_pipeline))
                 .append(WinitRenderer::new(DecodedRGBAFrameBuffer, width as u32, height as u32))
                 .append(registry.get(DecodedRGBAFrameBuffer).redeemer()),
-        )
-        .run();
+        );
+
+    let mut handles = Vec::new();
+    handles.extend(error_pipeline.run());
+    handles.extend(pipeline.run());
 
     for handle in handles {
         handle.await.unwrap();

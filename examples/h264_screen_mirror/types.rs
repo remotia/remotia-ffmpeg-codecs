@@ -11,7 +11,7 @@ pub enum BufferType {
 }
 
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Error {
     NoFrame,
     CodecError,

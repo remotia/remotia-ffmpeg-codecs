@@ -1,4 +1,4 @@
-use bytes::{BufMut, BytesMut};
+use bytes::{BufMut};
 use log::debug;
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext, AVCodecParserContext},
@@ -11,7 +11,7 @@ use cstr::cstr;
 
 use remotia::{
     buffers::BufferMut,
-    traits::{FrameError, FrameProcessor, PullableFrameProperties, BorrowMutFrameProperties},
+    traits::{FrameError, FrameProcessor, BorrowMutFrameProperties},
 };
 
 use async_trait::async_trait;
@@ -97,8 +97,6 @@ where
         loop {
             match self.decode_context.receive_frame() {
                 Ok(yuv_frame) => {
-                    log::trace!("Received AVFrame: {:?}", yuv_frame);
-
                     let mut rgba_frame = AVFrame::new();
                     rgba_frame.set_format(rsmpeg::ffi::AVPixelFormat_AV_PIX_FMT_RGBA);
                     rgba_frame.set_width(yuv_frame.width);
@@ -111,23 +109,17 @@ where
                     let linesize = rgba_frame.linesize;
                     let height = rgba_frame.height as usize;
 
-                    log::debug!("Linesize: {:?}", linesize);
-                    log::debug!("Height: {}", height);
-
                     let linesize = linesize[0] as usize;
                     let data = unsafe { std::slice::from_raw_parts(rgba_frame.data[0], height * linesize) };
 
-                    log::debug!("Data len: {}", data.len());
-
                     let rgba_buffer = frame_data.get_mut_ref(&self.rgba_buffer_key).unwrap();
                     rgba_buffer.put(data);
-
-                    log::debug!("RGBA buffer len: {}", rgba_buffer.len());
 
                     break;
                 }
                 Err(RsmpegError::DecoderDrainError) => {
                     debug!("No frames to be pulled");
+                    frame_data.report_error(self.drain_error);
                     break;
                 }
                 Err(RsmpegError::DecoderFlushedError) => {
