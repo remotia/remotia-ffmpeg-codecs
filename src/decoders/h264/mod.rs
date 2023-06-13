@@ -1,11 +1,9 @@
-use std::sync::Arc;
+use std::{sync::Arc, ffi::CString};
 
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext, AVCodecParserContext},
     swscale::SwsContext,
 };
-
-use cstr::cstr;
 
 use tokio::sync::Mutex;
 
@@ -17,7 +15,9 @@ mod puller;
 pub use pusher::*;
 pub use puller::*;
 
-pub struct H264DecoderBuilder<K, E> {
+pub struct DecoderBuilder<K, E> {
+    codec_id: Option<String>,
+
     encoded_buffer_key: Option<K>,
     decoded_buffer_key: Option<K>,
 
@@ -34,11 +34,12 @@ pub struct H264DecoderBuilder<K, E> {
 }
 
 // TODO: Fix all those unsafe impl
-unsafe impl<K, E> Send for H264DecoderBuilder<K, E> {}
+unsafe impl<K, E> Send for DecoderBuilder<K, E> {}
 
-impl<K, E> H264DecoderBuilder<K, E> {
+impl<K, E> DecoderBuilder<K, E> {
     pub fn new() -> Self {
         Self {
+            codec_id: None,
             encoded_buffer_key: None,
             decoded_buffer_key: None,
             drain_error: None,
@@ -52,10 +53,12 @@ impl<K, E> H264DecoderBuilder<K, E> {
         }
     }
 
-    pub fn build(self) -> (H264DecoderPusher<K, E>, H264DecoderPuller<K, E>) {
+    pub fn build(self) -> (DecoderPusher<K, E>, DecoderPuller<K, E>) {
+        let codec_id = self.codec_id.expect("Missing mandatory field 'codec_id'");
         let options = self.options.unwrap_or_default().to_av_dict();
 
-        let decoder = AVCodec::find_decoder_by_name(cstr!("h264")).unwrap();
+        let codec_id_string = CString::new(codec_id).unwrap();
+        let decoder = AVCodec::find_decoder_by_name(&codec_id_string).unwrap();
         let decode_context = {
             let mut decode_context = AVCodecContext::new(&decoder);
             decode_context.open(Some(options)).unwrap();
@@ -103,13 +106,13 @@ impl<K, E> H264DecoderBuilder<K, E> {
             .expect("Missing mandatory field 'drain_error'");
 
         (
-            H264DecoderPusher {
+            DecoderPusher {
                 decode_context: decode_context.clone(),
                 parser_context,
                 encoded_buffer_key,
                 codec_error,
             },
-            H264DecoderPuller {
+            DecoderPuller {
                 decode_context: decode_context.clone(),
                 scaling_context,
                 decoded_buffer_key,
@@ -165,6 +168,11 @@ impl<K, E> H264DecoderBuilder<K, E> {
 
     pub fn scaling_flags(mut self, scaling_flags: u32) -> Self {
         self.scaling_flags = Some(scaling_flags);
+        self
+    }
+
+    pub fn codec_id(mut self, codec_id: &str) -> Self {
+        self.codec_id = Some(codec_id.to_string());
         self
     }
 }

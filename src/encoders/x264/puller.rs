@@ -13,13 +13,13 @@ use tokio::sync::Mutex;
 use crate::encoders::utils::packet::receive_encoded_packet;
 
 
-pub struct X264EncoderPuller<K> {
+pub struct EncoderPuller<K> {
     pub(super) encode_context: Arc<Mutex<AVCodecContext>>,
     pub(super) encoded_buffer_key: K,
 }
 
 #[async_trait]
-impl<'a, F, K> FrameProcessor<F> for X264EncoderPuller<K>
+impl<'a, F, K> FrameProcessor<F> for EncoderPuller<K>
 where
     K: Send,
     F: BorrowMutFrameProperties<K, BytesMut> + Send + 'static,

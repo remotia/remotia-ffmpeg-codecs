@@ -14,7 +14,7 @@ use tokio::sync::Mutex;
 
 use crate::{ffi, encoders::utils::avframe::send_avframe};
 
-pub struct X264EncoderPusher<K> {
+pub struct EncoderPusher<K> {
     pub(super) encode_context: Arc<Mutex<AVCodecContext>>,
     pub(super) scaling_context: SwsContext,
 
@@ -22,7 +22,7 @@ pub struct X264EncoderPusher<K> {
 }
 
 #[async_trait]
-impl<F, K> FrameProcessor<F> for X264EncoderPusher<K>
+impl<F, K> FrameProcessor<F> for EncoderPusher<K>
 where
     K: Send + Copy,
     F: BorrowFrameProperties<K, BytesMut> + Send + 'static,

@@ -17,7 +17,7 @@ use remotia::{
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 
-pub struct H264DecoderPuller<K, E> {
+pub struct DecoderPuller<K, E> {
     pub(super) decode_context: Arc<Mutex<AVCodecContext>>,
     pub(super) scaling_context: SwsContext,
     pub(super) decoded_buffer_key: K,
@@ -25,7 +25,7 @@ pub struct H264DecoderPuller<K, E> {
 }
 
 #[async_trait]
-impl<F, K, E> FrameProcessor<F> for H264DecoderPuller<K, E>
+impl<F, K, E> FrameProcessor<F> for DecoderPuller<K, E>
 where
     K: Send + Copy,
     E: Send + Copy,

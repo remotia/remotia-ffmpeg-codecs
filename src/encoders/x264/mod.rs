@@ -1,11 +1,10 @@
-use std::{ptr::NonNull, sync::Arc};
+use std::{ffi::CString, ptr::NonNull, sync::Arc};
 
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext},
     swscale::SwsContext,
 };
 
-use cstr::cstr;
 use tokio::sync::Mutex;
 
 use crate::ffi;
@@ -18,7 +17,9 @@ mod pusher;
 pub use puller::*;
 pub use pusher::*;
 
-pub struct X264EncoderBuilder<K: Copy> {
+pub struct EncoderBuilder<K: Copy> {
+    codec_id: Option<String>,
+
     width: Option<i32>,
     height: Option<i32>,
 
@@ -32,9 +33,10 @@ pub struct X264EncoderBuilder<K: Copy> {
     scaling_flags: Option<u32>,
 }
 
-impl<K: Copy> X264EncoderBuilder<K> {
+impl<K: Copy> EncoderBuilder<K> {
     pub fn new() -> Self {
         Self {
+            codec_id: None,
             width: None,
             height: None,
             rgba_buffer_key: None,
@@ -46,16 +48,22 @@ impl<K: Copy> X264EncoderBuilder<K> {
         }
     }
 
-    pub fn build(self) -> (X264EncoderPusher<K>, X264EncoderPuller<K>) {
+    pub fn build(self) -> (EncoderPusher<K>, EncoderPuller<K>) {
+        let codec_id = self.codec_id.expect("Missing mandatory field 'codec_id'");
         let width = self.width.expect("Missing mandatory field 'width'");
         let height = self.height.expect("Missing mandatory field 'height'");
         let options = self.options.unwrap_or_default();
 
-        let input_pixel_format = self.input_pixel_format.expect("Missing mandatory field 'input_pixel_format'");
-        let codec_pixel_format = self.codec_pixel_format.expect("Missing mandatory field 'codec_pixel_format'");
+        let input_pixel_format = self
+            .input_pixel_format
+            .expect("Missing mandatory field 'input_pixel_format'");
+        let codec_pixel_format = self
+            .codec_pixel_format
+            .expect("Missing mandatory field 'codec_pixel_format'");
 
         let encode_context = {
-            let encoder = AVCodec::find_encoder_by_name(cstr!("libx264")).unwrap();
+            let codec_id_string = CString::new(codec_id).unwrap();
+            let encoder = AVCodec::find_encoder_by_name(&codec_id_string).unwrap();
             let mut encode_context = AVCodecContext::new(&encoder);
             encode_context.set_width(width);
             encode_context.set_height(height);
@@ -95,12 +103,12 @@ impl<K: Copy> X264EncoderBuilder<K> {
             .expect("Missing mandatory field 'encoded_buffer_key'");
 
         (
-            X264EncoderPusher {
+            EncoderPusher {
                 encode_context: encode_context.clone(),
                 scaling_context,
                 rgba_buffer_key,
             },
-            X264EncoderPuller {
+            EncoderPuller {
                 encode_context: encode_context.clone(),
                 encoded_buffer_key,
             },
@@ -144,6 +152,11 @@ impl<K: Copy> X264EncoderBuilder<K> {
 
     pub fn scaling_flags(mut self, scaling_flags: u32) -> Self {
         self.scaling_flags = Some(scaling_flags);
+        self
+    }
+
+    pub fn codec_id(mut self, codec_id: &str) -> Self {
+        self.codec_id = Some(codec_id.to_string());
         self
     }
 }

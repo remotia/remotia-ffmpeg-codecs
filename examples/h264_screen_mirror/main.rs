@@ -7,8 +7,8 @@ use remotia::{
     render::winit::WinitRenderer,
 };
 use remotia_ffmpeg_codecs::{
-    decoders::h264::H264DecoderBuilder,
-    encoders::{options::Options, x264::X264EncoderBuilder},
+    decoders::h264::DecoderBuilder,
+    encoders::{options::Options, x264::EncoderBuilder},
     ffi,
 };
 
@@ -49,7 +49,8 @@ async fn main() {
         .register(DecodedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4)
         .await;
 
-    let (encoder_pusher, encoder_puller) = X264EncoderBuilder::new()
+    let (encoder_pusher, encoder_puller) = EncoderBuilder::new()
+        .codec_id("libx264")
         .width(width as i32)
         .height(height as i32)
         .rgba_buffer_key(CapturedRGBAFrameBuffer)
@@ -59,7 +60,8 @@ async fn main() {
         .options(Options::new().set("crf", "26").set("tune", "zerolatency"))
         .build();
 
-    let (decoder_pusher, decoder_puller) = H264DecoderBuilder::new()
+    let (decoder_pusher, decoder_puller) = DecoderBuilder::new()
+        .codec_id("h264")
         .width(width as i32)
         .height(height as i32)
         .encoded_buffer_key(EncodedFrameBuffer)

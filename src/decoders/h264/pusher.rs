@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 
 use crate::decoders::utils::packet::parse_and_send_packets;
 
-pub struct H264DecoderPusher<K, E> {
+pub struct DecoderPusher<K, E> {
     pub(super) parser_context: AVCodecParserContext,
     pub(super) decode_context: Arc<Mutex<AVCodecContext>>,
 
@@ -25,7 +25,7 @@ pub struct H264DecoderPusher<K, E> {
 }
 
 #[async_trait]
-impl<F, K, E> FrameProcessor<F> for H264DecoderPusher<K, E>
+impl<F, K, E> FrameProcessor<F> for DecoderPusher<K, E>
 where
     K: Send + Copy,
     E: Send + Copy,
