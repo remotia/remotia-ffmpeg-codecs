@@ -1314,7 +1314,6 @@ dependencies = [
  "remotia-buffer-utils",
  "remotia-core",
  "remotia-core-capturers",
- "remotia-core-codecs",
  "remotia-core-renderers",
 ]
 
@@ -1350,15 +1349,6 @@ dependencies = [
  "remotia-buffer-utils",
  "remotia-core",
  "scrap",
-]
-
-[[package]]
-name = "remotia-core-codecs"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "remotia-core",
 ]
 
 [[package]]

@@ -9,7 +9,7 @@ features = ["rt", "rt-multi-thread", "macros", "net"]
 
 [dependencies.remotia]
 path = "../remotia"
-features = ["buffers", "capture", "codecs", "render"]
+features = ["buffers", "capture", "render"]
 
 [dependencies]
 rsmpeg = "0.14.1+ffmpeg.6.0"
