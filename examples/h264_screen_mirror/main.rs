@@ -56,16 +56,16 @@ async fn main() {
         Options::new().set("crf", "26").set("tune", "zerolatency"),
     );
 
-    let (decoder_pusher, decoder_puller) = H264DecoderBuilder::new(
-        width as i32,
-        height as i32,
-        EncodedFrameBuffer,
-        DecodedRGBAFrameBuffer,
-        NoFrame,
-        CodecError,
-        ffi::AVPixelFormat_AV_PIX_FMT_YUV420P,
-        ffi::AVPixelFormat_AV_PIX_FMT_BGRA,
-    ).build();
+    let (decoder_pusher, decoder_puller) = H264DecoderBuilder::new()
+        .width(width as i32)
+        .height(height as i32)
+        .encoded_buffer_key(EncodedFrameBuffer)
+        .decoded_buffer_key(DecodedRGBAFrameBuffer)
+        .drain_error(NoFrame)
+        .codec_error(CodecError)
+        .input_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
+        .output_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_BGRA)
+        .build();
 
     let mut error_pipeline = Pipeline::<FrameData>::singleton(
         Component::new()

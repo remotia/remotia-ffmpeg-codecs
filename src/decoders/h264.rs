@@ -4,7 +4,7 @@ use bytes::BufMut;
 use log::debug;
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext, AVCodecParserContext},
-    avutil::{AVDictionary, AVFrame},
+    avutil::{AVFrame},
     error::RsmpegError,
     swscale::SwsContext,
 };
@@ -21,35 +21,64 @@ use tokio::sync::Mutex;
 
 use super::utils::packet::parse_and_send_packets;
 
-use crate::ffi;
+use crate::{encoders::options::Options, ffi};
 
 pub struct H264DecoderBuilder<K, E> {
-    parser_context: AVCodecParserContext,
-    decode_context: AVCodecContext,
-    scaling_context: SwsContext,
+    encoded_buffer_key: Option<K>,
+    decoded_buffer_key: Option<K>,
 
-    encoded_buffer_key: K,
-    rgba_buffer_key: K,
+    drain_error: Option<E>,
+    codec_error: Option<E>,
 
-    drain_error: E,
-    codec_error: E,
+    options: Option<Options>,
+
+    width: Option<i32>,
+    height: Option<i32>,
+    input_pixel_format: Option<ffi::AVPixelFormat>,
+    output_pixel_format: Option<ffi::AVPixelFormat>,
+    scaling_flags: Option<u32>,
 }
 
 // TODO: Fix all those unsafe impl
 unsafe impl<K, E> Send for H264DecoderBuilder<K, E> {}
 
 impl<K, E> H264DecoderBuilder<K, E> {
-    pub fn new(
-        width: i32,
-        height: i32,
-        encoded_buffer_key: K,
-        rgba_buffer_key: K,
-        drain_error: E,
-        codec_error: E,
-        input_pixel_format: ffi::AVPixelFormat,
-        output_pixel_format: ffi::AVPixelFormat
-    ) -> Self {
+    pub fn new() -> Self {
+        Self {
+            encoded_buffer_key: None,
+            decoded_buffer_key: None,
+            drain_error: None,
+            codec_error: None,
+            width: None,
+            height: None,
+            input_pixel_format: None,
+            output_pixel_format: None,
+            scaling_flags: None,
+            options: None,
+        }
+    }
+
+    pub fn build(self) -> (H264DecoderPusher<K, E>, H264DecoderPuller<K, E>) {
+        let options = self.options.unwrap_or_default().to_av_dict();
+
         let decoder = AVCodec::find_decoder_by_name(cstr!("h264")).unwrap();
+        let decode_context = {
+            let mut decode_context = AVCodecContext::new(&decoder);
+            decode_context.open(Some(options)).unwrap();
+
+            Arc::new(Mutex::new(decode_context))
+        };
+
+        let width = self.width.expect("Missing mandatory field 'width'");
+        let height = self.height.expect("Missing mandatory field 'height'");
+        let input_pixel_format = self
+            .input_pixel_format
+            .expect("Missing mandatory field 'input_pixel_format'");
+        let output_pixel_format = self
+            .output_pixel_format
+            .expect("Missing mandatory field 'output_pixel_format'");
+
+        let scaling_flags = self.scaling_flags.unwrap_or(ffi::SWS_BILINEAR);
 
         let scaling_context = {
             SwsContext::get_context(
@@ -59,51 +88,90 @@ impl<K, E> H264DecoderBuilder<K, E> {
                 width,
                 height,
                 output_pixel_format,
-                ffi::SWS_BILINEAR,
+                scaling_flags,
             )
             .unwrap()
         };
 
-        let options = AVDictionary::new(cstr!(""), cstr!(""), 0)
-            .set(cstr!("threads"), cstr!("4"), 0)
-            .set(cstr!("thread_type"), cstr!("slice"), 0);
+        let parser_context = AVCodecParserContext::find(decoder.id).unwrap();
 
-        Self {
-            decode_context: {
-                let mut decode_context = AVCodecContext::new(&decoder);
-                decode_context.open(Some(options)).unwrap();
-
-                decode_context
-            },
-
-            scaling_context,
-
-            parser_context: AVCodecParserContext::find(decoder.id).unwrap(),
-            encoded_buffer_key,
-            rgba_buffer_key,
-
-            drain_error,
-            codec_error
-        }
-    }
-
-    pub fn build(self) -> (H264DecoderPusher<K, E>, H264DecoderPuller<K, E>) {
-        let decode_context = Arc::new(Mutex::new(self.decode_context));
+        let encoded_buffer_key = self
+            .encoded_buffer_key
+            .expect("Missing mandantory field 'encoded_buffer_key'");
+        let codec_error = self
+            .codec_error
+            .expect("Missing mandatory field 'codec_error'");
+        let decoded_buffer_key = self
+            .decoded_buffer_key
+            .expect("Missing mandantory field 'decoded_buffer_key'");
+        let drain_error = self
+            .drain_error
+            .expect("Missing mandatory field 'drain_error'");
 
         (
             H264DecoderPusher {
-                parser_context: self.parser_context,
                 decode_context: decode_context.clone(),
-                encoded_buffer_key: self.encoded_buffer_key,
-                codec_error: self.codec_error
+                parser_context,
+                encoded_buffer_key,
+                codec_error,
             },
             H264DecoderPuller {
                 decode_context: decode_context.clone(),
-                scaling_context: self.scaling_context,
-                rgba_buffer_key: self.rgba_buffer_key,
-                drain_error: self.drain_error,
+                scaling_context,
+                decoded_buffer_key,
+                drain_error,
             },
         )
+    }
+
+    pub fn encoded_buffer_key(mut self, encoded_buffer_key: K) -> Self {
+        self.encoded_buffer_key = Some(encoded_buffer_key);
+        self
+    }
+
+    pub fn decoded_buffer_key(mut self, decoded_buffer_key: K) -> Self {
+        self.decoded_buffer_key = Some(decoded_buffer_key);
+        self
+    }
+
+    pub fn drain_error(mut self, drain_error: E) -> Self {
+        self.drain_error = Some(drain_error);
+        self
+    }
+
+    pub fn codec_error(mut self, codec_error: E) -> Self {
+        self.codec_error = Some(codec_error);
+        self
+    }
+
+    pub fn options(mut self, options: Options) -> Self {
+        self.options = Some(options);
+        self
+    }
+
+    pub fn width(mut self, width: i32) -> Self {
+        self.width = Some(width);
+        self
+    }
+
+    pub fn height(mut self, height: i32) -> Self {
+        self.height = Some(height);
+        self
+    }
+
+    pub fn input_pixel_format(mut self, input_pixel_format: ffi::AVPixelFormat) -> Self {
+        self.input_pixel_format = Some(input_pixel_format);
+        self
+    }
+
+    pub fn output_pixel_format(mut self, output_pixel_format: ffi::AVPixelFormat) -> Self {
+        self.output_pixel_format = Some(output_pixel_format);
+        self
+    }
+
+    pub fn scaling_flags(mut self, scaling_flags: u32) -> Self {
+        self.scaling_flags = Some(scaling_flags);
+        self
     }
 }
 
@@ -119,7 +187,7 @@ pub struct H264DecoderPusher<K, E> {
 pub struct H264DecoderPuller<K, E> {
     decode_context: Arc<Mutex<AVCodecContext>>,
     scaling_context: SwsContext,
-    rgba_buffer_key: K,
+    decoded_buffer_key: K,
     drain_error: E,
 }
 
@@ -185,8 +253,8 @@ where
                     let linesize = linesize[0] as usize;
                     let data = unsafe { std::slice::from_raw_parts(rgba_frame.data[0], height * linesize) };
 
-                    let rgba_buffer = frame_data.get_mut_ref(&self.rgba_buffer_key).unwrap();
-                    rgba_buffer.put(data);
+                    let decoded_buffer = frame_data.get_mut_ref(&self.decoded_buffer_key).unwrap();
+                    decoded_buffer.put(data);
 
                     break;
                 }
