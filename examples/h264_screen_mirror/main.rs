@@ -7,7 +7,7 @@ use remotia::{
     render::winit::WinitRenderer,
 };
 use remotia_ffmpeg_codecs::{
-    ffi, encoders::EncoderBuilder, options::Options, decoders::DecoderBuilder,
+    ffi, encoders::EncoderBuilder, options::Options, decoders::DecoderBuilder, scaling::ScalerBuilder,
 };
 
 use crate::types::{BufferType::*, Error::*, FrameData};
@@ -53,8 +53,13 @@ async fn main() {
         .height(height as i32)
         .rgba_buffer_key(CapturedRGBAFrameBuffer)
         .encoded_buffer_key(EncodedFrameBuffer)
-        .input_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_RGBA)
-        .codec_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
+        .scaler(ScalerBuilder::new()
+            .input_width(width as i32)
+            .input_height(height as i32)
+            .input_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_RGBA)
+            .output_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
+            .build()
+        )
         .options(Options::new().set("crf", "26").set("tune", "zerolatency"))
         .build();
 

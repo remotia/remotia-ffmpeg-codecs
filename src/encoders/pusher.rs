@@ -2,20 +2,18 @@ use std::sync::Arc;
 
 use bytes::BytesMut;
 use remotia::traits::{BorrowFrameProperties, FrameProcessor};
-use rsmpeg::{avcodec::AVCodecContext, avutil::AVFrame, swscale::SwsContext};
+use rsmpeg::{avcodec::AVCodecContext};
 
 use async_trait::async_trait;
 
 use tokio::sync::Mutex;
 
-use crate::ffi;
+use crate::scaling::Scaler;
 
 pub struct EncoderPusher<K> {
     pub(super) encode_context: Arc<Mutex<AVCodecContext>>,
-    pub(super) scaling_context: SwsContext,
+    pub(super) scaler: Scaler,
     pub(super) rgba_buffer_key: K,
-
-    pub(super) input_avframe: AVFrame,
 }
 
 #[async_trait]
@@ -29,7 +27,7 @@ where
 
         let mut encode_context = self.encode_context.lock().await;
 
-        let input_avframe = &mut self.input_avframe;
+        let input_avframe = self.scaler.input_frame_mut();
         input_avframe.set_pts(pts);
 
         let linesize = input_avframe.linesize;
@@ -40,18 +38,9 @@ where
 
         data.copy_from_slice(frame_data.get_ref(&self.rgba_buffer_key).unwrap());
 
-        let mut codec_avframe = AVFrame::new();
-        codec_avframe.set_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P);
-        codec_avframe.set_width(encode_context.width);
-        codec_avframe.set_height(encode_context.height);
-        codec_avframe.set_pts(pts);
-        codec_avframe.alloc_buffer().unwrap();
+        self.scaler.scale();
 
-        self.scaling_context
-            .scale_frame(&input_avframe, 0, input_avframe.height, &mut codec_avframe)
-            .unwrap();
-
-        encode_context.send_frame(Some(&codec_avframe)).unwrap();
+        encode_context.send_frame(Some(&self.scaler.scaled_frame())).unwrap();
 
         Some(frame_data)
     }

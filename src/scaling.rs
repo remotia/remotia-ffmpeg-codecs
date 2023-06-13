@@ -24,6 +24,14 @@ impl ScalerBuilder {
         }
     }
 
+    builder_set!(input_width, i32);
+    builder_set!(input_height, i32);
+    builder_set!(output_width, i32);
+    builder_set!(output_height, i32);
+    builder_set!(input_pixel_format, ffi::AVPixelFormat);
+    builder_set!(output_pixel_format, ffi::AVPixelFormat);
+    builder_set!(scaling_flags, u32);
+
     pub fn build(self) -> Scaler {
         let input_width = unwrap_mandatory(self.input_width);
         let input_height = unwrap_mandatory(self.input_height);
@@ -48,18 +56,62 @@ impl ScalerBuilder {
             .unwrap()
         };
 
-        Scaler { sws_context }
+        let input_avframe = {
+            let mut avframe = AVFrame::new();
+            avframe.set_format(input_pixel_format);
+            avframe.set_width(output_width);
+            avframe.set_height(output_height);
+            avframe.alloc_buffer().unwrap();
+            avframe
+        };
+
+        let output_avframe = {
+            let mut avframe = AVFrame::new();
+            avframe.set_format(output_pixel_format);
+            avframe.set_width(output_width);
+            avframe.set_height(output_height);
+            avframe.alloc_buffer().unwrap();
+            avframe
+        };
+
+        Scaler {
+            input_frame: input_avframe,
+            scaled_frame: output_avframe,
+            sws_context,
+        }
     }
 }
 
 pub struct Scaler {
     sws_context: SwsContext,
+    input_frame: AVFrame,
+    scaled_frame: AVFrame,
 }
-
 impl Scaler {
-    pub fn scale(&mut self, input_frame: &AVFrame, output_frame: &mut AVFrame) {
+    pub fn scale(&mut self) {
+        let input_frame = &self.input_frame;
+        let scaled_frame = &mut self.scaled_frame;
+
         self.sws_context
-            .scale_frame(&input_frame, 0, input_frame.height, output_frame)
+            .scale_frame(input_frame, 0, input_frame.height, scaled_frame)
             .unwrap();
+
+        scaled_frame.set_pts(input_frame.pts);
+    }
+
+    pub fn input_frame(&self) -> &AVFrame {
+        &self.input_frame
+    }
+
+    pub fn scaled_frame(&self) -> &AVFrame {
+        &self.scaled_frame
+    }
+
+    pub fn input_frame_mut(&mut self) -> &mut AVFrame {
+        &mut self.input_frame
+    }
+
+    pub fn scaled_frame_mut(&mut self) -> &mut AVFrame {
+        &mut self.scaled_frame
     }
 }
