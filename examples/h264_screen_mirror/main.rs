@@ -7,8 +7,7 @@ use remotia::{
     render::winit::WinitRenderer,
 };
 use remotia_ffmpeg_codecs::{
-    decoders::h264::DecoderBuilder,
-    ffi, encoders::EncoderBuilder, options::Options,
+    ffi, encoders::EncoderBuilder, options::Options, decoders::DecoderBuilder,
 };
 
 use crate::types::{BufferType::*, Error::*, FrameData};

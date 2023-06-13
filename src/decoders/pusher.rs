@@ -13,7 +13,7 @@ use remotia::{
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 
-use crate::decoders::utils::packet::parse_and_send_packets;
+use super::utils::parse_and_send_packets;
 
 pub struct DecoderPusher<K, E> {
     pub(super) parser_context: AVCodecParserContext,
