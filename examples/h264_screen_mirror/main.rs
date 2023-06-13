@@ -49,8 +49,6 @@ async fn main() {
 
     let (encoder_pusher, encoder_puller) = EncoderBuilder::new()
         .codec_id("libx264")
-        .width(width as i32)
-        .height(height as i32)
         .rgba_buffer_key(CapturedRGBAFrameBuffer)
         .encoded_buffer_key(EncodedFrameBuffer)
         .scaler(ScalerBuilder::new()
