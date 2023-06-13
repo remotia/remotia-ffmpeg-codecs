@@ -7,8 +7,9 @@ use remotia::{
     render::winit::WinitRenderer,
 };
 use remotia_ffmpeg_codecs::{
-    encoders::{options::Options, x264::X264Encoder},
-    ffi, decoders::h264::H264DecoderBuilder,
+    decoders::h264::H264DecoderBuilder,
+    encoders::{options::Options, x264::X264EncoderBuilder},
+    ffi,
 };
 
 use crate::types::{BufferType::*, Error::*, FrameData};
@@ -48,13 +49,15 @@ async fn main() {
         .register(DecodedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4)
         .await;
 
-    let encoder = X264Encoder::new(
-        width as i32,
-        height as i32,
-        CapturedRGBAFrameBuffer,
-        EncodedFrameBuffer,
-        Options::new().set("crf", "26").set("tune", "zerolatency"),
-    );
+    let (encoder_pusher, encoder_puller) = X264EncoderBuilder::new()
+        .width(width as i32)
+        .height(height as i32)
+        .rgba_buffer_key(CapturedRGBAFrameBuffer)
+        .encoded_buffer_key(EncodedFrameBuffer)
+        .input_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_RGBA)
+        .codec_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
+        .options(Options::new().set("crf", "26").set("tune", "zerolatency"))
+        .build();
 
     let (decoder_pusher, decoder_puller) = H264DecoderBuilder::new()
         .width(width as i32)
@@ -84,10 +87,10 @@ async fn main() {
             .append(Ticker::new(1000 / args.framerate))
             .append(registry.get(CapturedRGBAFrameBuffer).borrower())
             .append(capturer)
-            .append(encoder.pusher())
+            .append(encoder_pusher)
             .append(registry.get(CapturedRGBAFrameBuffer).redeemer())
             .append(registry.get(EncodedFrameBuffer).borrower())
-            .append(encoder.puller())
+            .append(encoder_puller)
             .append(decoder_pusher)
             .append(registry.get(EncodedFrameBuffer).redeemer())
             .append(OnErrorSwitch::new(&mut error_pipeline))
