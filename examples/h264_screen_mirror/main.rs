@@ -7,9 +7,8 @@ use remotia::{
     render::winit::WinitRenderer,
 };
 use remotia_ffmpeg_codecs::{
-    decoders::h264::H264Decoder,
     encoders::{options::Options, x264::X264Encoder},
-    ffi,
+    ffi, decoders::h264::H264DecoderBuilder,
 };
 
 use crate::types::{BufferType::*, Error::*, FrameData};
@@ -57,7 +56,7 @@ async fn main() {
         Options::new().set("crf", "26").set("tune", "zerolatency"),
     );
 
-    let decoder = H264Decoder::new(
+    let (decoder_pusher, decoder_puller) = H264DecoderBuilder::new(
         width as i32,
         height as i32,
         EncodedFrameBuffer,
@@ -66,7 +65,7 @@ async fn main() {
         CodecError,
         ffi::AVPixelFormat_AV_PIX_FMT_YUV420P,
         ffi::AVPixelFormat_AV_PIX_FMT_BGRA,
-    );
+    ).build();
 
     let mut error_pipeline = Pipeline::<FrameData>::singleton(
         Component::new()
@@ -89,9 +88,11 @@ async fn main() {
             .append(registry.get(CapturedRGBAFrameBuffer).redeemer())
             .append(registry.get(EncodedFrameBuffer).borrower())
             .append(encoder.puller())
-            .append(registry.get(DecodedRGBAFrameBuffer).borrower())
-            .append(decoder)
+            .append(decoder_pusher)
             .append(registry.get(EncodedFrameBuffer).redeemer())
+            .append(OnErrorSwitch::new(&mut error_pipeline))
+            .append(registry.get(DecodedRGBAFrameBuffer).borrower())
+            .append(decoder_puller)
             .append(OnErrorSwitch::new(&mut error_pipeline))
             .append(WinitRenderer::new(DecodedRGBAFrameBuffer, width as u32, height as u32))
             .append(registry.get(DecodedRGBAFrameBuffer).redeemer()),

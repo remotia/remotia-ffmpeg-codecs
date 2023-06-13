@@ -4,7 +4,7 @@ use rsmpeg::{
     ffi, UnsafeDerefMut,
 };
 
-pub fn parse_packets(
+pub fn parse_and_send_packets(
     mut decode_context: &mut AVCodecContext,
     mut parser_context: &mut AVCodecParserContext,
     input_buffer: &[u8],
