@@ -7,7 +7,7 @@ use rsmpeg::{
 
 use tokio::sync::Mutex;
 
-use crate::{encoders::options::Options, ffi};
+use crate::{options::Options, ffi};
 
 mod pusher;
 mod puller;

@@ -8,8 +8,7 @@ use remotia::{
 };
 use remotia_ffmpeg_codecs::{
     decoders::h264::DecoderBuilder,
-    encoders::{options::Options, x264::EncoderBuilder},
-    ffi,
+    ffi, encoders::EncoderBuilder, options::Options,
 };
 
 use crate::types::{BufferType::*, Error::*, FrameData};

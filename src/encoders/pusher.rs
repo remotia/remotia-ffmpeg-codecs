@@ -1,18 +1,14 @@
-use std::{sync::Arc};
+use std::sync::Arc;
 
 use bytes::BytesMut;
 use remotia::traits::{BorrowFrameProperties, FrameProcessor};
-use rsmpeg::{
-    avcodec::{AVCodecContext},
-    avutil::AVFrame,
-    swscale::SwsContext,
-};
+use rsmpeg::{avcodec::AVCodecContext, avutil::AVFrame, swscale::SwsContext};
 
 use async_trait::async_trait;
 
 use tokio::sync::Mutex;
 
-use crate::{ffi, encoders::utils::avframe::send_avframe};
+use crate::ffi;
 
 pub struct EncoderPusher<K> {
     pub(super) encode_context: Arc<Mutex<AVCodecContext>>,
@@ -53,9 +49,11 @@ where
         yuv_frame.set_pts(pts);
         yuv_frame.alloc_buffer().unwrap();
 
-        self.scaling_context.scale_frame(&rgba_frame, 0, rgba_frame.height, &mut yuv_frame).unwrap();
+        self.scaling_context
+            .scale_frame(&rgba_frame, 0, rgba_frame.height, &mut yuv_frame)
+            .unwrap();
 
-        send_avframe(&mut encode_context, yuv_frame);
+        encode_context.send_frame(Some(&yuv_frame)).unwrap();
 
         Some(frame_data)
     }
