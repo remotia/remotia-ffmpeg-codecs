@@ -1,27 +1,21 @@
 use std::sync::Arc;
 
-use bytes::BufMut;
-use log::debug;
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext, AVCodecParserContext},
-    avutil::{AVFrame},
-    error::RsmpegError,
     swscale::SwsContext,
 };
 
 use cstr::cstr;
 
-use remotia::{
-    buffers::BufferMut,
-    traits::{BorrowMutFrameProperties, FrameError, FrameProcessor},
-};
-
-use async_trait::async_trait;
 use tokio::sync::Mutex;
 
-use super::utils::packet::parse_and_send_packets;
-
 use crate::{encoders::options::Options, ffi};
+
+mod pusher;
+mod puller;
+
+pub use pusher::*;
+pub use puller::*;
 
 pub struct H264DecoderBuilder<K, E> {
     encoded_buffer_key: Option<K>,
@@ -175,101 +169,4 @@ impl<K, E> H264DecoderBuilder<K, E> {
     }
 }
 
-pub struct H264DecoderPusher<K, E> {
-    parser_context: AVCodecParserContext,
-    decode_context: Arc<Mutex<AVCodecContext>>,
 
-    encoded_buffer_key: K,
-
-    codec_error: E,
-}
-
-pub struct H264DecoderPuller<K, E> {
-    decode_context: Arc<Mutex<AVCodecContext>>,
-    scaling_context: SwsContext,
-    decoded_buffer_key: K,
-    drain_error: E,
-}
-
-#[async_trait]
-impl<F, K, E> FrameProcessor<F> for H264DecoderPusher<K, E>
-where
-    K: Send + Copy,
-    E: Send + Copy,
-    F: BorrowMutFrameProperties<K, BufferMut> + FrameError<E> + Send + 'static,
-{
-    async fn process(&mut self, mut frame_data: F) -> Option<F> {
-        let timestamp = 0 as i64; // TODO: Extract timestamp from properties
-
-        let encoded_buffer = frame_data.get_mut_ref(&self.encoded_buffer_key).unwrap();
-
-        let encoded_packets_buffer = &encoded_buffer[..encoded_buffer.len()];
-
-        let mut decode_context = self.decode_context.lock().await;
-
-        let send_result = parse_and_send_packets(
-            &mut decode_context,
-            &mut self.parser_context,
-            encoded_packets_buffer,
-            timestamp,
-        );
-
-        if let Err(error) = send_result {
-            debug!("Dropping frame, reason: {:?}", error);
-            frame_data.report_error(self.codec_error);
-            return Some(frame_data);
-        }
-
-        Some(frame_data)
-    }
-}
-
-#[async_trait]
-impl<F, K, E> FrameProcessor<F> for H264DecoderPuller<K, E>
-where
-    K: Send + Copy,
-    E: Send + Copy,
-    F: BorrowMutFrameProperties<K, BufferMut> + FrameError<E> + Send + 'static,
-{
-    async fn process(&mut self, mut frame_data: F) -> Option<F> {
-        loop {
-            let mut decode_context = self.decode_context.lock().await;
-            match decode_context.receive_frame() {
-                Ok(yuv_frame) => {
-                    let mut rgba_frame = AVFrame::new();
-                    rgba_frame.set_format(rsmpeg::ffi::AVPixelFormat_AV_PIX_FMT_RGBA);
-                    rgba_frame.set_width(yuv_frame.width);
-                    rgba_frame.set_height(yuv_frame.height);
-                    rgba_frame.set_pts(yuv_frame.pts);
-                    rgba_frame.alloc_buffer().unwrap();
-
-                    self.scaling_context
-                        .scale_frame(&yuv_frame, 0, yuv_frame.height, &mut rgba_frame)
-                        .unwrap();
-
-                    let linesize = rgba_frame.linesize;
-                    let height = rgba_frame.height as usize;
-
-                    let linesize = linesize[0] as usize;
-                    let data = unsafe { std::slice::from_raw_parts(rgba_frame.data[0], height * linesize) };
-
-                    let decoded_buffer = frame_data.get_mut_ref(&self.decoded_buffer_key).unwrap();
-                    decoded_buffer.put(data);
-
-                    break;
-                }
-                Err(RsmpegError::DecoderDrainError) => {
-                    debug!("No frames to be pulled");
-                    frame_data.report_error(self.drain_error);
-                    break;
-                }
-                Err(RsmpegError::DecoderFlushedError) => {
-                    panic!("Decoder has been flushed unexpectedly");
-                }
-                Err(e) => panic!("{:?}", e),
-            }
-        }
-
-        Some(frame_data)
-    }
-}
