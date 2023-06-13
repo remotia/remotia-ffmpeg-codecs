@@ -6,7 +6,7 @@ use rsmpeg::{
 };
 
 use remotia::{
-    buffers::BufferMut,
+    buffers::BytesMut,
     traits::{BorrowMutFrameProperties, FrameError, FrameProcessor},
 };
 
@@ -29,7 +29,7 @@ impl<F, K, E> FrameProcessor<F> for DecoderPusher<K, E>
 where
     K: Send + Copy,
     E: Send + Copy,
-    F: BorrowMutFrameProperties<K, BufferMut> + FrameError<E> + Send + 'static,
+    F: BorrowMutFrameProperties<K, BytesMut> + FrameError<E> + Send + 'static,
 {
     async fn process(&mut self, mut frame_data: F) -> Option<F> {
         let timestamp = 0 as i64; // TODO: Extract timestamp from properties

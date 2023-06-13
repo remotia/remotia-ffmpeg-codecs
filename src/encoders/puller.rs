@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use bytes::{BufMut, BytesMut};
-use remotia::traits::{BorrowMutFrameProperties, FrameProcessor};
+use remotia::{traits::{BorrowMutFrameProperties, FrameProcessor}, buffers::{BytesMut, BufMut}};
 use rsmpeg::{avcodec::AVCodecContext, error::RsmpegError};
 
 use async_trait::async_trait;

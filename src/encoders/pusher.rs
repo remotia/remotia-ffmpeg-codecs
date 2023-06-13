@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
-use bytes::BytesMut;
-use remotia::traits::{BorrowFrameProperties, FrameProcessor};
-use rsmpeg::{avcodec::AVCodecContext};
+use remotia::{
+    buffers::BytesMut,
+    traits::{BorrowFrameProperties, FrameProcessor},
+};
+use rsmpeg::avcodec::AVCodecContext;
 
 use async_trait::async_trait;
 
@@ -40,7 +42,9 @@ where
 
         self.scaler.scale();
 
-        encode_context.send_frame(Some(&self.scaler.scaled_frame())).unwrap();
+        encode_context
+            .send_frame(Some(&self.scaler.scaled_frame()))
+            .unwrap();
 
         Some(frame_data)
     }

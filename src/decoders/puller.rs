@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
-use bytes::BufMut;
 use log::debug;
 use rsmpeg::{avcodec::AVCodecContext, error::RsmpegError};
 
 use remotia::{
-    buffers::BufferMut,
+    buffers::{BufMut, BytesMut},
     traits::{BorrowMutFrameProperties, FrameError, FrameProcessor},
 };
 
@@ -26,7 +25,7 @@ impl<F, K, E> FrameProcessor<F> for DecoderPuller<K, E>
 where
     K: Send + Copy,
     E: Send + Copy,
-    F: BorrowMutFrameProperties<K, BufferMut> + FrameError<E> + Send + 'static,
+    F: BorrowMutFrameProperties<K, BytesMut> + FrameError<E> + Send + 'static,
 {
     async fn process(&mut self, mut frame_data: F) -> Option<F> {
         loop {
