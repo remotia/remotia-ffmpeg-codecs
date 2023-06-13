@@ -2,7 +2,7 @@ use std::{sync::Arc, ffi::CString};
 
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext, AVCodecParserContext},
-    swscale::SwsContext,
+    swscale::SwsContext, avutil::AVFrame,
 };
 
 use tokio::sync::Mutex;
@@ -30,7 +30,7 @@ pub struct DecoderBuilder<K, E> {
 
     width: Option<i32>,
     height: Option<i32>,
-    input_pixel_format: Option<ffi::AVPixelFormat>,
+    codec_pixel_format: Option<ffi::AVPixelFormat>,
     output_pixel_format: Option<ffi::AVPixelFormat>,
     scaling_flags: Option<u32>,
 }
@@ -48,7 +48,7 @@ impl<K, E> DecoderBuilder<K, E> {
             codec_error: None,
             width: None,
             height: None,
-            input_pixel_format: None,
+            codec_pixel_format: None,
             output_pixel_format: None,
             scaling_flags: None,
             options: None,
@@ -70,7 +70,7 @@ impl<K, E> DecoderBuilder<K, E> {
 
         let width = unwrap_mandatory(self.width);
         let height = unwrap_mandatory(self.height);
-        let input_pixel_format = unwrap_mandatory(self.input_pixel_format);
+        let codec_pixel_format = unwrap_mandatory(self.codec_pixel_format);
         let output_pixel_format = unwrap_mandatory(self.output_pixel_format);
 
         let scaling_flags = self.scaling_flags.unwrap_or(ffi::SWS_BILINEAR);
@@ -79,7 +79,7 @@ impl<K, E> DecoderBuilder<K, E> {
             SwsContext::get_context(
                 width,
                 height,
-                input_pixel_format,
+                codec_pixel_format,
                 width,
                 height,
                 output_pixel_format,
@@ -95,6 +95,15 @@ impl<K, E> DecoderBuilder<K, E> {
         let decoded_buffer_key = unwrap_mandatory(self.decoded_buffer_key);
         let drain_error = unwrap_mandatory(self.drain_error);
 
+        let output_avframe = {
+            let mut avframe = AVFrame::new();
+            avframe.set_format(output_pixel_format);
+            avframe.set_width(width);
+            avframe.set_height(height);
+            avframe.alloc_buffer().unwrap();
+            avframe
+        };
+
         (
             DecoderPusher {
                 decode_context: decode_context.clone(),
@@ -102,11 +111,13 @@ impl<K, E> DecoderBuilder<K, E> {
                 encoded_buffer_key,
                 codec_error,
             },
+
             DecoderPuller {
                 decode_context: decode_context.clone(),
                 scaling_context,
                 decoded_buffer_key,
                 drain_error,
+                output_avframe
             },
         )
     }
@@ -118,7 +129,7 @@ impl<K, E> DecoderBuilder<K, E> {
     builder_set!(options, Options);
     builder_set!(width, i32);
     builder_set!(height, i32);
-    builder_set!(input_pixel_format, ffi::AVPixelFormat);
+    builder_set!(codec_pixel_format, ffi::AVPixelFormat);
     builder_set!(output_pixel_format, ffi::AVPixelFormat);
     builder_set!(scaling_flags, u32);
 

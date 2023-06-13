@@ -66,7 +66,7 @@ async fn main() {
         .decoded_buffer_key(DecodedRGBAFrameBuffer)
         .drain_error(NoFrame)
         .codec_error(CodecError)
-        .input_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
+        .codec_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
         .output_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_BGRA)
         .build();
 

@@ -22,6 +22,8 @@ pub struct DecoderPuller<K, E> {
     pub(super) scaling_context: SwsContext,
     pub(super) decoded_buffer_key: K,
     pub(super) drain_error: E,
+
+    pub(super) output_avframe: AVFrame,
 }
 
 #[async_trait]
@@ -35,23 +37,19 @@ where
         loop {
             let mut decode_context = self.decode_context.lock().await;
             match decode_context.receive_frame() {
-                Ok(yuv_frame) => {
-                    let mut rgba_frame = AVFrame::new();
-                    rgba_frame.set_format(rsmpeg::ffi::AVPixelFormat_AV_PIX_FMT_RGBA);
-                    rgba_frame.set_width(yuv_frame.width);
-                    rgba_frame.set_height(yuv_frame.height);
-                    rgba_frame.set_pts(yuv_frame.pts);
-                    rgba_frame.alloc_buffer().unwrap();
+                Ok(codec_avframe) => {
+                    let output_avframe = &mut self.output_avframe;
+                    output_avframe.set_pts(codec_avframe.pts);
 
                     self.scaling_context
-                        .scale_frame(&yuv_frame, 0, yuv_frame.height, &mut rgba_frame)
+                        .scale_frame(&codec_avframe, 0, codec_avframe.height, output_avframe)
                         .unwrap();
 
-                    let linesize = rgba_frame.linesize;
-                    let height = rgba_frame.height as usize;
+                    let linesize = output_avframe.linesize;
+                    let height = output_avframe.height as usize;
 
                     let linesize = linesize[0] as usize;
-                    let data = unsafe { std::slice::from_raw_parts(rgba_frame.data[0], height * linesize) };
+                    let data = unsafe { std::slice::from_raw_parts(output_avframe.data[0], height * linesize) };
 
                     let decoded_buffer = frame_data.get_mut_ref(&self.decoded_buffer_key).unwrap();
                     decoded_buffer.put(data);

@@ -2,7 +2,7 @@ use std::{ffi::CString, ptr::NonNull, sync::Arc};
 
 use rsmpeg::{
     avcodec::{AVCodec, AVCodecContext},
-    swscale::SwsContext,
+    swscale::SwsContext, avutil::AVFrame,
 };
 
 use tokio::sync::Mutex;
@@ -94,11 +94,21 @@ impl<K: Copy> EncoderBuilder<K> {
         let rgba_buffer_key = unwrap_mandatory(self.rgba_buffer_key);
         let encoded_buffer_key = unwrap_mandatory(self.encoded_buffer_key);
 
+        let input_avframe = {
+            let mut avframe = AVFrame::new();
+            avframe.set_format(input_pixel_format);
+            avframe.set_width(width);
+            avframe.set_height(height);
+            avframe.alloc_buffer().unwrap();
+            avframe
+        };
+
         (
             EncoderPusher {
                 encode_context: encode_context.clone(),
                 scaling_context,
                 rgba_buffer_key,
+                input_avframe
             },
             EncoderPuller {
                 encode_context: encode_context.clone(),
