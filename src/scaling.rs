@@ -59,8 +59,8 @@ impl ScalerBuilder {
         let input_avframe = {
             let mut avframe = AVFrame::new();
             avframe.set_format(input_pixel_format);
-            avframe.set_width(output_width);
-            avframe.set_height(output_height);
+            avframe.set_width(input_width);
+            avframe.set_height(input_height);
             avframe.alloc_buffer().unwrap();
             avframe
         };

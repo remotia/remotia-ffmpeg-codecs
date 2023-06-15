@@ -33,7 +33,7 @@ where
         input_avframe.set_pts(pts);
 
         let linesize = input_avframe.linesize;
-        let height = encode_context.height as usize;
+        let height = input_avframe.height as usize;
 
         let linesize = linesize[0] as usize;
         let data = unsafe { std::slice::from_raw_parts_mut(input_avframe.data[0], height * linesize) };
