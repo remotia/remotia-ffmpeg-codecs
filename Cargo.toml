@@ -12,7 +12,7 @@ path = "../remotia"
 features = ["buffers", "capture", "render"]
 
 [dependencies]
-rsmpeg = "0.14.1+ffmpeg.6.0"
+rsmpeg = { version = "0.14.1+ffmpeg.6.0", features = ["ffmpeg5"]}
 env_logger = "0.10.0"
 log = "0.4.14"
 async-trait = "0.1.68"

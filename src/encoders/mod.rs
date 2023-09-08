@@ -10,14 +10,15 @@ use super::options::Options;
 
 mod puller;
 mod pusher;
+pub mod fillers;
 
 pub use puller::*;
 pub use pusher::*;
 
-pub struct EncoderBuilder<K: Copy> {
+pub struct EncoderBuilder<T, K: Copy> {
     codec_id: Option<String>,
 
-    rgba_buffer_key: Option<K>,
+    filler: Option<T>,
     encoded_buffer_key: Option<K>,
 
     options: Option<Options>,
@@ -25,18 +26,18 @@ pub struct EncoderBuilder<K: Copy> {
     scaler: Option<Scaler>,
 }
 
-impl<K: Copy> EncoderBuilder<K> {
+impl<T, K: Copy> EncoderBuilder<T, K> {
     pub fn new() -> Self {
         Self {
             codec_id: None,
-            rgba_buffer_key: None,
+            filler: None,
             encoded_buffer_key: None,
             options: None,
             scaler: None,
         }
     }
 
-    builder_set!(rgba_buffer_key, K);
+    builder_set!(filler, T);
     builder_set!(encoded_buffer_key, K);
     builder_set!(options, Options);
     builder_set!(scaler, Scaler);
@@ -46,7 +47,7 @@ impl<K: Copy> EncoderBuilder<K> {
         self
     }
 
-    pub fn build(self) -> (EncoderPusher<K>, EncoderPuller<K>) {
+    pub fn build(self) -> (EncoderPusher<T>, EncoderPuller<K>) {
         let codec_id = unwrap_mandatory(self.codec_id);
         let options = self.options.unwrap_or_default();
 
@@ -73,14 +74,14 @@ impl<K: Copy> EncoderBuilder<K> {
             Arc::new(Mutex::new(encode_context))
         };
 
-        let rgba_buffer_key = unwrap_mandatory(self.rgba_buffer_key);
+        let filler = unwrap_mandatory(self.filler);
         let encoded_buffer_key = unwrap_mandatory(self.encoded_buffer_key);
 
         (
             EncoderPusher {
                 encode_context: encode_context.clone(),
                 scaler,
-                rgba_buffer_key,
+                filler,
             },
             EncoderPuller {
                 encode_context: encode_context.clone(),
