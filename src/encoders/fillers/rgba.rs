@@ -7,6 +7,12 @@ pub struct RGBAFrameFiller<K> {
     pub(super) rgba_buffer_key: K,
 }
 
+impl<K> RGBAFrameFiller<K> {
+    pub fn new(rgba_buffer_key: K) -> Self {
+        Self { rgba_buffer_key }
+    }
+}
+
 impl<F, K> AVFrameFiller<F> for RGBAFrameFiller<K>
 where
     K: Send + Copy,

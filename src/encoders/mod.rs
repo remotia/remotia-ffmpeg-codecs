@@ -15,7 +15,7 @@ pub mod fillers;
 pub use puller::*;
 pub use pusher::*;
 
-pub struct EncoderBuilder<T, K: Copy> {
+pub struct EncoderBuilder<T, K: Copy, EFE: Copy> {
     codec_id: Option<String>,
 
     filler: Option<T>,
@@ -24,9 +24,11 @@ pub struct EncoderBuilder<T, K: Copy> {
     options: Option<Options>,
 
     scaler: Option<Scaler>,
+
+    encoder_flushed_error: Option<EFE>,
 }
 
-impl<T, K: Copy> EncoderBuilder<T, K> {
+impl<T, K: Copy, EFE: Copy> EncoderBuilder<T, K, EFE> {
     pub fn new() -> Self {
         Self {
             codec_id: None,
@@ -34,6 +36,7 @@ impl<T, K: Copy> EncoderBuilder<T, K> {
             encoded_buffer_key: None,
             options: None,
             scaler: None,
+            encoder_flushed_error: None
         }
     }
 
@@ -41,13 +44,14 @@ impl<T, K: Copy> EncoderBuilder<T, K> {
     builder_set!(encoded_buffer_key, K);
     builder_set!(options, Options);
     builder_set!(scaler, Scaler);
+    builder_set!(encoder_flushed_error, EFE);
 
     pub fn codec_id(mut self, codec_id: &str) -> Self {
         self.codec_id = Some(codec_id.to_string());
         self
     }
 
-    pub fn build(self) -> (EncoderPusher<T>, EncoderPuller<K>) {
+    pub fn build(self) -> (EncoderPusher<T>, EncoderPuller<K, EFE>) {
         let codec_id = unwrap_mandatory(self.codec_id);
         let options = self.options.unwrap_or_default();
 
@@ -76,6 +80,7 @@ impl<T, K: Copy> EncoderBuilder<T, K> {
 
         let filler = unwrap_mandatory(self.filler);
         let encoded_buffer_key = unwrap_mandatory(self.encoded_buffer_key);
+        let encoder_flushed_error = unwrap_mandatory(self.encoder_flushed_error);
 
         (
             EncoderPusher {
@@ -86,6 +91,7 @@ impl<T, K: Copy> EncoderBuilder<T, K> {
             EncoderPuller {
                 encode_context: encode_context.clone(),
                 encoded_buffer_key,
+                encoder_flushed_error
             },
         )
     }

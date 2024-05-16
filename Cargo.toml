@@ -8,8 +8,10 @@ version = "1.28.2"
 features = ["rt", "rt-multi-thread", "macros", "net"]
 
 [dependencies.remotia]
-path = "../remotia"
-features = ["buffers", "capture", "render"]
+git = "https://github.com/remotia/remotia"
+branch = "generic_data"
+default-features = false
+features = ["buffers", "render"]
 
 [dependencies]
 rsmpeg = { version = "0.14.1+ffmpeg.6.0", features = ["ffmpeg5"]}
