@@ -8,9 +8,9 @@ version = "1.28.2"
 features = ["rt", "rt-multi-thread", "macros", "net"]
 
 [dependencies.remotia]
-# git = "https://github.com/remotia/remotia"
-# branch = "generic_data"
-path = "../remotia/remotia"
+git = "https://github.com/remotia/remotia"
+branch = "generic_data"
+# path = "../remotia/remotia"
 default-features = false
 features = ["buffers", "render"]
 
