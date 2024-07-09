@@ -24,12 +24,14 @@ where
     F: Send + 'static,
 {
     async fn process(&mut self, frame_data: F) -> Option<F> {
-        let pts = 0 as i64; // TODO: Implement timestamp
+        let pts = 999; // 0 as i64; // TODO: Implement timestamp
 
         let mut encode_context = self.encode_context.lock().await;
 
         let input_avframe = self.scaler.input_frame_mut();
         input_avframe.set_pts(pts);
+
+        log::debug!("Input frame: {:?}", input_avframe);
 
         self.filler.fill(&frame_data, input_avframe);
 

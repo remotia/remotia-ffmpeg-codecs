@@ -52,6 +52,8 @@ pub fn parse_and_send_packets(
         };
 
         if get_packet {
+            log::debug!("Decoded packet: {:?}", packet);
+
             let result = decode_context.send_packet(Some(&packet));
 
             match result {
