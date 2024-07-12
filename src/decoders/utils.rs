@@ -1,7 +1,6 @@
 use log::{debug, trace};
 use rsmpeg::{
     avcodec::{AVCodecContext, AVCodecParserContext, AVPacket},
-    ffi::{self, AV_NOPTS_VALUE},
     UnsafeDerefMut,
 };
 
@@ -37,7 +36,7 @@ pub fn parse_and_send_packets(
             let mut offset = 0;
             loop {
                 let current_offset = unsafe {
-                    ffi::av_parser_parse2(
+                    rsmpeg::ffi::av_parser_parse2(
                         this.as_mut_ptr(),
                         decode_context.as_mut_ptr(),
                         &mut packet_data,

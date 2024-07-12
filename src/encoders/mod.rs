@@ -8,54 +8,47 @@ use crate::{builder::unwrap_mandatory, ffi, scaling::Scaler};
 
 use super::options::Options;
 
+pub mod fillers;
 mod puller;
 mod pusher;
-pub mod fillers;
 
 pub use puller::*;
 pub use pusher::*;
 
-pub struct EncoderBuilder<T, K: Copy, EFE: Copy, P: Copy> {
-    codec_id: Option<String>,
-
-    filler: Option<T>,
-    encoded_buffer_key: Option<K>,
-
-    options: Option<Options>,
-
-    scaler: Option<Scaler>,
-
-    encoder_flushed_error: Option<EFE>,
-
-    frame_id_prop: Option<P>
+pub trait FFMpegEncode {
+    fn write_packet_data(&mut self, packet_data: &[u8]);
+    fn report_flush_error(&mut self);
+    fn set_frame_id(&mut self, frame_id: i64);
+    fn get_frame_id(&self) -> i64;
 }
 
-impl<T, K: Copy, EFE: Copy, P: Copy> EncoderBuilder<T, K, EFE, P> {
+pub struct EncoderBuilder<T> {
+    codec_id: Option<String>,
+    filler: Option<T>,
+    options: Option<Options>,
+    scaler: Option<Scaler>,
+}
+
+impl<T> EncoderBuilder<T> {
     pub fn new() -> Self {
         Self {
             codec_id: None,
             filler: None,
-            encoded_buffer_key: None,
             options: None,
             scaler: None,
-            encoder_flushed_error: None,
-            frame_id_prop: None
         }
     }
 
     builder_set!(filler, T);
-    builder_set!(encoded_buffer_key, K);
     builder_set!(options, Options);
     builder_set!(scaler, Scaler);
-    builder_set!(encoder_flushed_error, EFE);
-    builder_set!(frame_id_prop, P);
 
     pub fn codec_id(mut self, codec_id: &str) -> Self {
         self.codec_id = Some(codec_id.to_string());
         self
     }
 
-    pub fn build(self) -> (EncoderPusher<T, P>, EncoderPuller<K, EFE, P>) {
+    pub fn build(self) -> (EncoderPusher<T>, EncoderPuller) {
         let codec_id = unwrap_mandatory(self.codec_id);
         let options = self.options.unwrap_or_default();
 
@@ -83,22 +76,15 @@ impl<T, K: Copy, EFE: Copy, P: Copy> EncoderBuilder<T, K, EFE, P> {
         };
 
         let filler = unwrap_mandatory(self.filler);
-        let encoded_buffer_key = unwrap_mandatory(self.encoded_buffer_key);
-        let encoder_flushed_error = unwrap_mandatory(self.encoder_flushed_error);
-        let frame_id_prop = unwrap_mandatory(self.frame_id_prop);
 
         (
             EncoderPusher {
                 encode_context: encode_context.clone(),
                 scaler,
                 filler,
-                frame_id_prop
             },
             EncoderPuller {
                 encode_context: encode_context.clone(),
-                encoded_buffer_key,
-                encoder_flushed_error,
-                frame_id_prop
             },
         )
     }
