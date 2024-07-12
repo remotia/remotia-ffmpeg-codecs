@@ -1,61 +1,90 @@
-use log::{debug};
-use rsmpeg::{avcodec::AVCodecContext, avutil::AVFrame, error::RsmpegError};
+use std::{ffi::CString, ptr::NonNull, sync::Arc};
 
-#[allow(dead_code)]
-mod frame_builders;
+use rsmpeg::avcodec::{AVCodec, AVCodecContext};
 
-// pub mod asynchronous;
+use tokio::sync::Mutex;
 
-pub mod x264;
-pub mod x265;
-pub mod libvpx_vp9;
+use crate::{builder::unwrap_mandatory, ffi, scaling::Scaler};
 
-pub struct FFMpegEncodingBridge { }
+use super::options::Options;
 
-impl FFMpegEncodingBridge {
-    pub fn new(_frame_buffer_size: usize) -> Self {
-        FFMpegEncodingBridge {
+pub mod fillers;
+mod puller;
+mod pusher;
+
+pub use puller::*;
+pub use pusher::*;
+
+pub struct EncoderBuilder<T> {
+    codec_id: Option<String>,
+    filler: Option<T>,
+    options: Option<Options>,
+    scaler: Option<Scaler>,
+}
+
+impl<T> Default for EncoderBuilder<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> EncoderBuilder<T> {
+    pub fn new() -> Self {
+        Self {
+            codec_id: None,
+            filler: None,
+            options: None,
+            scaler: None,
         }
     }
 
-    pub fn encode_avframe(
-        &mut self,
-        encode_context: &mut AVCodecContext,
-        avframe: AVFrame,
-        output_buffer: &mut [u8]
-    ) -> usize {
-        let mut encoded_frame_length = 0;
-        encode_context.send_frame(Some(&avframe)).unwrap();
+    builder_set!(filler, T);
+    builder_set!(options, Options);
+    builder_set!(scaler, Scaler);
 
-        loop {
-            let packet = match encode_context.receive_packet() {
-                Ok(packet) => {
-                    // debug!("Received packet of size {}", packet.size);
-                    packet
-                }
-                Err(RsmpegError::EncoderDrainError) => {
-                    debug!("Drain error, breaking the loop");
-                    break;
-                }
-                Err(RsmpegError::EncoderFlushedError) => {
-                    debug!("Flushed error, breaking the loop");
-                    break;
-                }
-                Err(e) => panic!("{:?}", e),
+    pub fn codec_id(mut self, codec_id: &str) -> Self {
+        self.codec_id = Some(codec_id.to_string());
+        self
+    }
+
+    pub fn build(self) -> (EncoderPusher<T>, EncoderPuller) {
+        let codec_id = unwrap_mandatory(self.codec_id);
+        let options = self.options.unwrap_or_default();
+
+        let scaler = unwrap_mandatory(self.scaler);
+
+        let encode_context = {
+            let codec_id_string = CString::new(codec_id).unwrap();
+            let encoder = AVCodec::find_encoder_by_name(&codec_id_string).unwrap();
+            let mut encode_context = AVCodecContext::new(&encoder);
+            encode_context.set_width(scaler.scaled_frame().width);
+            encode_context.set_height(scaler.scaled_frame().height);
+            encode_context.set_pix_fmt(scaler.scaled_frame().format);
+            encode_context.set_time_base(ffi::AVRational { num: 1, den: 60 * 1000 });
+            encode_context.set_framerate(ffi::AVRational { num: 60, den: 1 });
+            let mut encode_context = unsafe {
+                let raw_encode_context = encode_context.into_raw().as_ptr();
+                AVCodecContext::from_raw(NonNull::new(raw_encode_context).unwrap())
             };
 
-            let data = unsafe { std::slice::from_raw_parts(packet.data, packet.size as usize) };
+            let options_dict = options.to_av_dict();
 
-            debug!("Encoded packet: {:?}", packet);
+            encode_context.open(Some(options_dict)).unwrap();
 
-            let start_index = encoded_frame_length;
-            let end_index = encoded_frame_length + data.len();
+            Arc::new(Mutex::new(encode_context))
+        };
 
-            output_buffer[start_index..end_index].copy_from_slice(data);
+        let filler = unwrap_mandatory(self.filler);
 
-            encoded_frame_length = end_index;
-        }
-
-        encoded_frame_length
+        (
+            EncoderPusher {
+                encode_context: encode_context.clone(),
+                scaler,
+                filler,
+            },
+            EncoderPuller {
+                encode_context: encode_context.clone(),
+            },
+        )
     }
 }

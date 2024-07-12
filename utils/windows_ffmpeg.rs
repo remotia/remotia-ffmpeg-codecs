@@ -65,13 +65,17 @@ fn main() -> Result<()> {
         // .arg("--enable-libmp3lame")
         // .arg("--enable-libopus")
         // .arg("--enable-libvorbis")
-        .arg("--enable-libvpx")
+        // .arg("--enable-libvpx")
         .arg("--enable-libx264")
         // .arg("--enable-libx265")
         // To workaround `https://github.com/larksuite/rsmpeg/pull/98#issuecomment-1467511193`
         .arg("--disable-decoder=exr,phm")
         .arg("--disable-programs")
         .arg("--enable-nonfree")
+        .arg("--arch=x86")
+        .arg("--target-os=mingw32")
+        .arg("--cross-prefix=i686-w64-mingw32-")
+        .arg("--pkg-config=pkg-config")
         .status()?;
 
     Command::new("make")
@@ -87,4 +91,3 @@ fn main() -> Result<()> {
 
     Ok(())
 }
-
