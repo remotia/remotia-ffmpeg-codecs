@@ -32,7 +32,7 @@ where
     F: BorrowMutFrameProperties<K, BytesMut> + FrameError<E> + Send + 'static,
 {
     async fn process(&mut self, mut frame_data: F) -> Option<F> {
-        let timestamp = 0 as i64; // TODO: Extract timestamp from properties
+        let timestamp = 100 as i64; // TODO: Extract timestamp from properties
 
         let encoded_buffer = frame_data.get_mut_ref(&self.encoded_buffer_key).unwrap();
 

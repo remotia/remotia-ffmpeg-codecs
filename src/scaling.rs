@@ -109,6 +109,14 @@ impl Scaler {
         scaled_frame.set_pts(input_frame.pts);
     }
 
+    /*pub fn set_scaled_frame_id(&mut self, value: i32) {
+        let mut raw_avframe = AVFrame::into_raw(self.scaled_frame.clone());
+        unsafe {
+            raw_avframe.as_mut().coded_picture_number = value;
+            self.scaled_frame = AVFrame::from_raw(raw_avframe);
+        }
+    }*/
+
     pub fn input_frame(&self) -> &AVFrame {
         &self.input_frame
     }

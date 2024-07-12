@@ -52,8 +52,6 @@ pub fn parse_and_send_packets(
         };
 
         if get_packet {
-            log::debug!("Decoded packet: {:?}", packet);
-
             let result = decode_context.send_packet(Some(&packet));
 
             match result {
@@ -66,7 +64,10 @@ pub fn parse_and_send_packets(
                 }
             }
 
-            trace!("Decoded packet: {:?}", packet);
+            unsafe {
+                let raw = packet.as_ptr();
+                trace!("Decoded raw packet: {:#?}", *raw);
+            }
 
             packet = AVPacket::new();
         } else {

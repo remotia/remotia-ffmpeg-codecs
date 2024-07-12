@@ -32,10 +32,18 @@ where
             let mut decode_context = self.decode_context.lock().await;
             match decode_context.receive_frame() {
                 Ok(codec_avframe) => {
+                    log::trace!("Received AVFrame: {:#?}", codec_avframe);
+                    unsafe {
+                        let raw = codec_avframe.as_ptr();
+                        // let raw = decode_context.as_ptr();
+                        // let received_frame_id = (*raw).pts;
+                        log::debug!("Received raw frame: {:#?}", *raw);
+                        // log::debug!("Received frame id: {}", received_frame_id);
+                    }
+
                     self.scaler.scale_input(&codec_avframe);
 
                     let output_avframe = &mut self.scaler.scaled_frame_mut();
-                    output_avframe.set_pts(codec_avframe.pts);
 
                     let linesize = output_avframe.linesize;
                     let height = output_avframe.height as usize;

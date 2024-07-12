@@ -53,7 +53,10 @@ where
 
             let data = unsafe { std::slice::from_raw_parts(packet.data, packet.size as usize) };
 
-            log::debug!("Encoded packet: {:?}", packet);
+            unsafe {
+                let raw = packet.as_ptr();
+                log::debug!("Encoded packet: {:#?}", *raw);
+            }
 
             output_buffer.put(data);
         }
