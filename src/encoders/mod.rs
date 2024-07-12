@@ -55,7 +55,7 @@ impl<T, K: Copy, EFE: Copy, P: Copy> EncoderBuilder<T, K, EFE, P> {
         self
     }
 
-    pub fn build(self) -> (EncoderPusher<T, P>, EncoderPuller<K, EFE>) {
+    pub fn build(self) -> (EncoderPusher<T, P>, EncoderPuller<K, EFE, P>) {
         let codec_id = unwrap_mandatory(self.codec_id);
         let options = self.options.unwrap_or_default();
 
@@ -97,7 +97,8 @@ impl<T, K: Copy, EFE: Copy, P: Copy> EncoderBuilder<T, K, EFE, P> {
             EncoderPuller {
                 encode_context: encode_context.clone(),
                 encoded_buffer_key,
-                encoder_flushed_error
+                encoder_flushed_error,
+                frame_id_prop
             },
         )
     }

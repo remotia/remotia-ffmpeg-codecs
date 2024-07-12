@@ -1,33 +1,38 @@
 use std::sync::Arc;
 
-use remotia::{buffers::{BufMut, BytesMut}, traits::{BorrowMutFrameProperties, FrameError, FrameProcessor}};
+use remotia::{
+    buffers::{BufMut, BytesMut},
+    traits::{BorrowMutFrameProperties, FrameError, FrameProcessor, FrameProperties},
+};
 use rsmpeg::{avcodec::AVCodecContext, error::RsmpegError};
 
 use async_trait::async_trait;
 
 use tokio::sync::Mutex;
 
-pub struct EncoderPuller<K, EFE> {
+pub struct EncoderPuller<K, EFE, P> {
     pub(super) encode_context: Arc<Mutex<AVCodecContext>>,
     pub(super) encoded_buffer_key: K,
     pub(super) encoder_flushed_error: EFE,
+    pub(super) frame_id_prop: P,
 }
 
-impl<K, EFE> EncoderPuller<K, EFE> {
+impl<K, EFE, P> EncoderPuller<K, EFE, P> {
     pub fn flusher_on<E>(&self, flush_error: E) -> EncoderFlusher<E> {
         EncoderFlusher {
             encode_context: self.encode_context.clone(),
-            flush_error
+            flush_error,
         }
     }
 }
 
 #[async_trait]
-impl<'a, F, K, EFE> FrameProcessor<F> for EncoderPuller<K, EFE>
+impl<'a, F, K, EFE, P> FrameProcessor<F> for EncoderPuller<K, EFE, P>
 where
     K: Send,
+    P: Send + Copy,
     EFE: Send + Copy,
-    F: FrameError<EFE> + BorrowMutFrameProperties<K, BytesMut> + Send + 'static,
+    F: FrameError<EFE> + BorrowMutFrameProperties<K, BytesMut> + FrameProperties<P, u128> + Send + 'static,
 {
     async fn process(&mut self, mut frame_data: F) -> Option<F> {
         loop {
@@ -59,6 +64,9 @@ where
             }
 
             output_buffer.put(data);
+            
+            let frame_id = packet.pts as u128;
+            frame_data.set(self.frame_id_prop, frame_id);
         }
         Some(frame_data)
     }
@@ -66,7 +74,7 @@ where
 
 pub struct EncoderFlusher<E> {
     pub(super) encode_context: Arc<Mutex<AVCodecContext>>,
-    pub(crate) flush_error: E
+    pub(crate) flush_error: E,
 }
 
 #[async_trait]

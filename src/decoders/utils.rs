@@ -1,46 +1,63 @@
 use log::{debug, trace};
 use rsmpeg::{
     avcodec::{AVCodecContext, AVCodecParserContext, AVPacket},
-    ffi, UnsafeDerefMut,
+    ffi::{self, AV_NOPTS_VALUE},
+    UnsafeDerefMut,
 };
 
 pub fn parse_and_send_packets(
-    mut decode_context: &mut AVCodecContext,
-    mut parser_context: &mut AVCodecParserContext,
+    decode_context: &mut AVCodecContext,
+    parser_context: &mut AVCodecParserContext,
     input_buffer: &[u8],
-    timestamp: i64,
+    frame_id: i64,
 ) -> Result<(), ()> {
     let mut packet = AVPacket::new();
     let mut parsed_offset = 0;
 
+    packet.set_pts(frame_id);
+
+    unsafe {
+        let raw = decode_context.as_ptr();
+        trace!("Raw context: {:#?}", *raw);
+    }
+
     debug!(
         "Parsing packets (timestamp: {}, input buffer size: {})...",
-        timestamp,
+        frame_id,
         input_buffer.len()
     );
 
     while parsed_offset < input_buffer.len() {
         let (get_packet, offset) = {
-            let this = &mut parser_context;
-
-            let codec_context: &mut AVCodecContext = &mut decode_context;
+            let this = &mut *parser_context;
             let packet: &mut AVPacket = &mut packet;
-            let data: &[u8] = &input_buffer[parsed_offset..];
             let mut packet_data = packet.data;
             let mut packet_size = packet.size;
+            
+            let mut offset = 0;
+            loop {
+                let current_offset = unsafe {
+                    ffi::av_parser_parse2(
+                        this.as_mut_ptr(),
+                        decode_context.as_mut_ptr(),
+                        &mut packet_data,
+                        &mut packet_size,
+                        input_buffer.as_ptr(),
+                        input_buffer.len() as i32,
+                        packet.pts,
+                        packet.dts,
+                        packet.pos,
+                    )
+                };
 
-            let offset = unsafe {
-                ffi::av_parser_parse2(
-                    this.as_mut_ptr(),
-                    codec_context.as_mut_ptr(),
-                    &mut packet_data,
-                    &mut packet_size,
-                    data.as_ptr(),
-                    data.len() as i32,
-                    timestamp,
-                    timestamp,
-                    0,
-                )
+                log::trace!("Parsing current packet size: {}", packet.size);
+                log::trace!("Parsing current offset: {}", current_offset);
+
+                offset += current_offset;
+
+                if packet_size > 0 {
+                    break;
+                }
             };
 
             unsafe {
@@ -48,10 +65,18 @@ pub fn parse_and_send_packets(
                 packet.deref_mut().size = packet_size;
             }
 
+            log::trace!("Parsing final packet size: {}", packet.size);
+            log::trace!("Parsing final offset: {}", offset);
+
             (packet.size != 0, offset as usize)
         };
 
         if get_packet {
+            unsafe {
+                let raw = packet.as_ptr();
+                trace!("Decoded raw packet: {:#?}", *raw);
+            }
+
             let result = decode_context.send_packet(Some(&packet));
 
             match result {
@@ -64,11 +89,6 @@ pub fn parse_and_send_packets(
                 }
             }
 
-            unsafe {
-                let raw = packet.as_ptr();
-                trace!("Decoded raw packet: {:#?}", *raw);
-            }
-
             packet = AVPacket::new();
         } else {
             debug!("No more packets to be sent");
@@ -77,5 +97,5 @@ pub fn parse_and_send_packets(
         parsed_offset += offset;
     }
 
-    Ok(()) 
+    Ok(())
 }
