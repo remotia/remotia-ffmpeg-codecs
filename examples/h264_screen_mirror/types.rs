@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use remotia::{traits::{PullableFrameProperties, BorrowFrameProperties, BorrowMutFrameProperties, FrameError}, buffers::BytesMut};
+use remotia::{
+    buffers::{BufMut, BytesMut},
+    traits::{BorrowFrameProperties, BorrowMutFrameProperties, FrameError, PullableFrameProperties},
+};
+use remotia_ffmpeg_codecs::FFMpegCodec;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BufferType {
@@ -9,17 +13,18 @@ pub enum BufferType {
     DecodedRGBAFrameBuffer,
 }
 
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Error {
     NoFrame,
     CodecError,
+    FlushError,
 }
 
 #[derive(Default, Debug)]
 pub struct FrameData {
+    frame_id: i64,
     buffers: HashMap<BufferType, BytesMut>,
-    error: Option<Error>
+    error: Option<Error>,
 }
 
 impl PullableFrameProperties<BufferType, BytesMut> for FrameData {
@@ -54,3 +59,40 @@ impl FrameError<Error> for FrameData {
     }
 }
 
+impl FFMpegCodec for FrameData {
+    fn write_packet_data(&mut self, packet_data: &[u8]) {
+        self.get_mut_ref(&BufferType::EncodedFrameBuffer)
+            .unwrap()
+            .put(packet_data)
+    }
+
+    fn get_packet_data_buffer(&self) -> &[u8] {
+        self.get_ref(&BufferType::EncodedFrameBuffer).unwrap()
+    }
+
+    fn write_decoded_buffer(&mut self, data: &[u8]) {
+        self.get_mut_ref(&BufferType::DecodedRGBAFrameBuffer)
+            .unwrap()
+            .put(data)
+    }
+
+    fn report_flush_error(&mut self) {
+        self.report_error(Error::FlushError)
+    }
+
+    fn report_codec_error(&mut self) {
+        self.report_error(Error::CodecError)
+    }
+
+    fn report_decoder_drain_error(&mut self) {
+        self.report_error(Error::NoFrame)
+    }
+
+    fn set_frame_id(&mut self, frame_id: i64) {
+        self.frame_id = frame_id;
+    }
+
+    fn get_frame_id(&self) -> i64 {
+        self.frame_id
+    }
+}

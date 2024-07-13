@@ -4,8 +4,7 @@ use log::debug;
 use rsmpeg::avcodec::{AVCodecContext, AVCodecParserContext};
 
 use remotia::{
-    buffers::BytesMut,
-    traits::{BorrowMutFrameProperties, FrameError, FrameProcessor, FrameProperties},
+    traits::{FrameProcessor},
 };
 
 use async_trait::async_trait;

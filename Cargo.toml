@@ -14,6 +14,12 @@ branch = "generic_data"
 default-features = false
 features = ["buffers", "render"]
 
+[dev-dependencies.remotia]
+git = "https://github.com/remotia/remotia"
+branch = "generic_data"
+default-features = false
+features = ["buffers", "render", "capture"]
+
 [dependencies]
 rsmpeg = { version = "0.14.1+ffmpeg.6.0", features = ["ffmpeg5"]}
 env_logger = "0.10.0"

@@ -1,6 +1,6 @@
 use std::{ffi::CString, sync::Arc};
 
-use rsmpeg::avcodec::{AVCodec, AVCodecContext, AVCodecParserContext, AVPacket};
+use rsmpeg::avcodec::{AVCodec, AVCodecContext, AVCodecParserContext};
 
 use tokio::sync::Mutex;
 
@@ -18,6 +18,12 @@ pub struct DecoderBuilder {
     codec_id: Option<String>,
     options: Option<Options>,
     scaler: Option<Scaler>,
+}
+
+impl Default for DecoderBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DecoderBuilder {

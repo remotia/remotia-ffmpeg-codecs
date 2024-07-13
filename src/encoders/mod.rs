@@ -22,6 +22,12 @@ pub struct EncoderBuilder<T> {
     scaler: Option<Scaler>,
 }
 
+impl<T> Default for EncoderBuilder<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> EncoderBuilder<T> {
     pub fn new() -> Self {
         Self {

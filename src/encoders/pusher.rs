@@ -32,10 +32,10 @@ where
         self.scaler.scale();
         self.scaler
             .scaled_frame_mut()
-            .set_pts(frame_data.get_frame_id() as i64);
+            .set_pts(frame_data.get_frame_id());
 
         encode_context
-            .send_frame(Some(&self.scaler.scaled_frame()))
+            .send_frame(Some(self.scaler.scaled_frame()))
             .unwrap();
 
         Some(frame_data)

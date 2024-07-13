@@ -11,6 +11,12 @@ pub struct ScalerBuilder {
     scaling_flags: Option<u32>,
 }
 
+impl Default for ScalerBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ScalerBuilder {
     pub fn new() -> Self {
         Self {

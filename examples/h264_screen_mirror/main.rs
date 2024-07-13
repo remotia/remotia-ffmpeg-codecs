@@ -7,10 +7,14 @@ use remotia::{
     render::winit::WinitRenderer,
 };
 use remotia_ffmpeg_codecs::{
-    ffi, encoders::EncoderBuilder, options::Options, decoders::DecoderBuilder, scaling::ScalerBuilder,
+    decoders::DecoderBuilder,
+    encoders::{fillers::rgba::RGBAFrameFiller, EncoderBuilder},
+    ffi,
+    options::Options,
+    scaling::ScalerBuilder,
 };
 
-use crate::types::{BufferType::*, Error::*, FrameData};
+use crate::types::{BufferType::*, FrameData};
 
 mod types;
 
@@ -49,31 +53,28 @@ async fn main() {
 
     let (encoder_pusher, encoder_puller) = EncoderBuilder::new()
         .codec_id("libx264")
-        .rgba_buffer_key(CapturedRGBAFrameBuffer)
-        .encoded_buffer_key(EncodedFrameBuffer)
-        .scaler(ScalerBuilder::new()
-            .input_width(width as i32)
-            .input_height(height as i32)
-            .input_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_RGBA)
-            .output_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
-            .build()
+        .filler(RGBAFrameFiller::new(CapturedRGBAFrameBuffer))
+        .scaler(
+            ScalerBuilder::new()
+                .input_width(width as i32)
+                .input_height(height as i32)
+                .input_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_RGBA)
+                .output_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
+                .build(),
         )
         .options(Options::new().set("crf", "26").set("tune", "zerolatency"))
         .build();
 
     let (decoder_pusher, decoder_puller) = DecoderBuilder::new()
         .codec_id("h264")
-        .encoded_buffer_key(EncodedFrameBuffer)
-        .decoded_buffer_key(DecodedRGBAFrameBuffer)
-        .scaler(ScalerBuilder::new()
-            .input_width(width as i32)
-            .input_height(height as i32)
-            .input_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
-            .output_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_BGRA)
-            .build()
+        .scaler(
+            ScalerBuilder::new()
+                .input_width(width as i32)
+                .input_height(height as i32)
+                .input_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
+                .output_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_BGRA)
+                .build(),
         )
-        .drain_error(NoFrame)
-        .codec_error(CodecError)
         .build();
 
     let mut error_pipeline = Pipeline::<FrameData>::singleton(
