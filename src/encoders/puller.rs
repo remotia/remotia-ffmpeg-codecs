@@ -23,7 +23,7 @@ impl EncoderPuller {
 }
 
 #[async_trait]
-impl<'a, F> FrameProcessor<F> for EncoderPuller
+impl<F> FrameProcessor<F> for EncoderPuller
 where
     F: FFMpegCodec + Send + 'static,
 {
