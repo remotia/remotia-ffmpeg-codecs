@@ -7,9 +7,9 @@ use async_trait::async_trait;
 
 use tokio::sync::Mutex;
 
-use crate::scaling::Scaler;
+use crate::{scaling::Scaler, FFMpegCodec};
 
-use super::{fillers::AVFrameFiller, FFMpegEncode};
+use super::fillers::AVFrameFiller;
 
 pub struct EncoderPusher<T> {
     pub(super) encode_context: Arc<Mutex<AVCodecContext>>,
@@ -21,7 +21,7 @@ pub struct EncoderPusher<T> {
 impl<F, T> FrameProcessor<F> for EncoderPusher<T>
 where
     T: AVFrameFiller<F> + Send,
-    F: FFMpegEncode + Send + 'static,
+    F: FFMpegCodec + Send + 'static,
 {
     async fn process(&mut self, frame_data: F) -> Option<F> {
         let mut encode_context = self.encode_context.lock().await;
@@ -30,7 +30,9 @@ where
         self.filler.fill(&frame_data, input_avframe);
 
         self.scaler.scale();
-        self.scaler.scaled_frame_mut().set_pts(frame_data.get_frame_id() as i64);
+        self.scaler
+            .scaled_frame_mut()
+            .set_pts(frame_data.get_frame_id() as i64);
 
         encode_context
             .send_frame(Some(&self.scaler.scaled_frame()))

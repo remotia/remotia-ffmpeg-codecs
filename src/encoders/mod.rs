@@ -15,13 +15,6 @@ mod pusher;
 pub use puller::*;
 pub use pusher::*;
 
-pub trait FFMpegEncode {
-    fn write_packet_data(&mut self, packet_data: &[u8]);
-    fn report_flush_error(&mut self);
-    fn set_frame_id(&mut self, frame_id: i64);
-    fn get_frame_id(&self) -> i64;
-}
-
 pub struct EncoderBuilder<T> {
     codec_id: Option<String>,
     filler: Option<T>,

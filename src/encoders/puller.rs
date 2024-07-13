@@ -7,7 +7,7 @@ use async_trait::async_trait;
 
 use tokio::sync::Mutex;
 
-use super::FFMpegEncode;
+use crate::FFMpegCodec;
 
 pub struct EncoderPuller {
     pub(super) encode_context: Arc<Mutex<AVCodecContext>>,
@@ -25,7 +25,7 @@ impl EncoderPuller {
 #[async_trait]
 impl<'a, F> FrameProcessor<F> for EncoderPuller
 where
-    F: FFMpegEncode + Send + 'static,
+    F: FFMpegCodec + Send + 'static,
 {
     async fn process(&mut self, mut frame_data: F) -> Option<F> {
         loop {
