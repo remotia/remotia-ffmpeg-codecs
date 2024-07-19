@@ -23,7 +23,7 @@ where
     T: AVFrameFiller<F> + Send,
     F: FFMpegCodec + Send + 'static,
 {
-    async fn process(&mut self, frame_data: F) -> Option<F> {
+    async fn process(&mut self, mut frame_data: F) -> Option<F> {
         let mut encode_context = self.encode_context.lock().await;
 
         let input_avframe = self.scaler.input_frame_mut();
@@ -34,9 +34,16 @@ where
             .scaled_frame_mut()
             .set_pts(frame_data.get_frame_id());
 
-        encode_context
-            .send_frame(Some(self.scaler.scaled_frame()))
-            .unwrap();
+        let send_result = encode_context.send_frame(Some(self.scaler.scaled_frame()));
+
+        if let Err(error) = send_result {
+            match error {
+                err => {
+                    log::warn!("Unhandled codec error during frame send: {}", err);
+                    frame_data.report_codec_error();
+                },
+            }
+        }
 
         Some(frame_data)
     }
