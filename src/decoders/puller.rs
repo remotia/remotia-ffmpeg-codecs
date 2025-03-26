@@ -3,9 +3,7 @@ use std::sync::Arc;
 use log::debug;
 use rsmpeg::{avcodec::AVCodecContext, error::RsmpegError};
 
-use remotia::{
-    traits::{FrameProcessor},
-};
+use remotia::traits::{FrameError, FrameProcessor};
 
 use async_trait::async_trait;
 use tokio::sync::Mutex;
@@ -15,6 +13,16 @@ use crate::{scaling::Scaler, FFMpegCodec};
 pub struct DecoderPuller {
     pub(super) decode_context: Arc<Mutex<AVCodecContext>>,
     pub(super) scaler: Scaler,
+}
+
+impl DecoderPuller {
+    pub fn flusher_on<E>(&self, flush_error: E) -> DecoderFlusher<E> {
+        DecoderFlusher {
+            decode_context: self.decode_context.clone(),
+            flush_error,
+            used: false,
+        }
+    }
 }
 
 #[async_trait]
@@ -46,9 +54,40 @@ where
                 frame_data.report_decoder_drain_error();
             }
             Err(RsmpegError::DecoderFlushedError) => {
-                panic!("Decoder has been flushed unexpectedly");
+                log::warn!("Decoder pull after it has been flushed");
+                frame_data.report_decoder_drain_error();
             }
             Err(e) => panic!("{:?}", e),
+        }
+
+        Some(frame_data)
+    }
+}
+
+pub struct DecoderFlusher<E> {
+    pub(crate) decode_context: Arc<Mutex<AVCodecContext>>,
+    pub(crate) flush_error: E,
+    used: bool,
+}
+
+#[async_trait]
+impl<F, E> FrameProcessor<F> for DecoderFlusher<E>
+where
+    E: Send + Copy + std::cmp::PartialEq,
+    F: FrameError<E> + Send + 'static,
+{
+    async fn process(&mut self, frame_data: F) -> Option<F> {
+        if self.used {
+            log::warn!("Attempt to double-flush the decoder");
+            return Some(frame_data);
+        }
+
+        if let Some(error) = frame_data.get_error() {
+            if error == self.flush_error {
+                log::debug!("Received flush error, flushing decode context...");
+                self.decode_context.lock().await.send_packet(None).unwrap();
+                self.used = true;
+            }
         }
 
         Some(frame_data)
