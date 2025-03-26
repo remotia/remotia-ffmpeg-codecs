@@ -1,6 +1,7 @@
 use log::{debug, trace};
 use rsmpeg::{
     avcodec::{AVCodecContext, AVCodecParserContext, AVPacket},
+    error::RsmpegError,
     UnsafeDerefMut,
 };
 
@@ -9,7 +10,7 @@ pub fn parse_and_send_packets(
     parser_context: &mut AVCodecParserContext,
     input_buffer: &[u8],
     frame_id: i64,
-) -> Result<(), ()> {
+) -> Result<(), RsmpegError> {
     let mut packet = AVPacket::new();
     let mut parsed_offset = 0;
 
@@ -32,7 +33,7 @@ pub fn parse_and_send_packets(
             let packet: &mut AVPacket = &mut packet;
             let mut packet_data = packet.data;
             let mut packet_size = packet.size;
-            
+
             let mut offset = 0;
             loop {
                 let current_offset = unsafe {
@@ -57,7 +58,7 @@ pub fn parse_and_send_packets(
                 if packet_size > 0 {
                     break;
                 }
-            };
+            }
 
             unsafe {
                 packet.deref_mut().data = packet_data;
@@ -84,7 +85,7 @@ pub fn parse_and_send_packets(
                 }
                 Err(e) => {
                     debug!("Error on send packet: {}", e);
-                    return Err(());
+                    return Err(e);
                 }
             }
 

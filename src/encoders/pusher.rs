@@ -37,12 +37,8 @@ where
         let send_result = encode_context.send_frame(Some(self.scaler.scaled_frame()));
 
         if let Err(error) = send_result {
-            match error {
-                err => {
-                    log::warn!("Unhandled codec error during frame send: {}", err);
-                    frame_data.report_codec_error();
-                },
-            }
+            log::warn!("Unhandled codec error during frame send: {}", error);
+            frame_data.report_codec_error(error);
         }
 
         Some(frame_data)

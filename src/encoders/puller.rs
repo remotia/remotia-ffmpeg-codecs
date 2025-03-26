@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use remotia::traits::{FrameError, FrameProcessor};
-use rsmpeg::{avcodec::AVCodecContext, error::RsmpegError};
+use rsmpeg::avcodec::AVCodecContext;
 
 use async_trait::async_trait;
 
@@ -18,6 +18,7 @@ impl EncoderPuller {
         EncoderFlusher {
             encode_context: self.encode_context.clone(),
             flush_error,
+            used: false,
         }
     }
 }
@@ -36,16 +37,11 @@ where
                     // debug!("Received packet of size {}", packet.size);
                     packet
                 }
-                Err(RsmpegError::EncoderDrainError) => {
-                    log::debug!("Drain error, breaking the loop");
+                Err(error) => {
+                    log::debug!("Encoding context returned error '{error:?}', breaking the loop");
+                    frame_data.report_codec_error(error);
                     break;
                 }
-                Err(RsmpegError::EncoderFlushedError) => {
-                    log::debug!("Flushed error, breaking the loop");
-                    frame_data.report_flush_error();
-                    break;
-                }
-                Err(e) => panic!("{:?}", e),
             };
 
             let data = unsafe { std::slice::from_raw_parts(packet.data, packet.size as usize) };
@@ -60,6 +56,7 @@ where
 pub struct EncoderFlusher<E> {
     pub(super) encode_context: Arc<Mutex<AVCodecContext>>,
     pub(crate) flush_error: E,
+    used: bool,
 }
 
 #[async_trait]
@@ -69,10 +66,16 @@ where
     F: FrameError<E> + Send + 'static,
 {
     async fn process(&mut self, frame_data: F) -> Option<F> {
+        if self.used {
+            log::warn!("Attempt to double-flush the encoder");
+            return Some(frame_data);
+        }
+
         if let Some(error) = frame_data.get_error() {
             if error == self.flush_error {
                 log::debug!("Received flush error, flushing encode context...");
                 self.encode_context.lock().await.send_frame(None).unwrap();
+                self.used = true;
             }
         }
 

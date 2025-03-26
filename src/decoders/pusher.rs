@@ -3,9 +3,7 @@ use std::sync::Arc;
 use log::debug;
 use rsmpeg::avcodec::{AVCodecContext, AVCodecParserContext};
 
-use remotia::{
-    traits::{FrameProcessor},
-};
+use remotia::traits::FrameProcessor;
 
 use async_trait::async_trait;
 use tokio::sync::Mutex;
@@ -41,7 +39,7 @@ where
 
         if let Err(error) = send_result {
             debug!("Dropping frame, reason: {:?}", error);
-            frame_data.report_codec_error();
+            frame_data.report_codec_error(error);
             return Some(frame_data);
         }
 

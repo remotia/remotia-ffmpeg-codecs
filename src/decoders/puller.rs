@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use log::debug;
-use rsmpeg::{avcodec::AVCodecContext, error::RsmpegError};
+use rsmpeg::avcodec::AVCodecContext;
 
 use remotia::traits::{FrameError, FrameProcessor};
 
@@ -49,15 +48,10 @@ where
 
                 frame_data.write_decoded_buffer(data);
             }
-            Err(RsmpegError::DecoderDrainError) => {
-                debug!("No frames to be pulled");
-                frame_data.report_decoder_drain_error();
+            Err(error) => {
+                log::debug!("Decoding context returned error '{error:?}'");
+                frame_data.report_codec_error(error);
             }
-            Err(RsmpegError::DecoderFlushedError) => {
-                log::warn!("Decoder pull after it has been flushed");
-                frame_data.report_decoder_drain_error();
-            }
-            Err(e) => panic!("{:?}", e),
         }
 
         Some(frame_data)
