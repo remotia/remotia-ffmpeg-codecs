@@ -67,7 +67,7 @@ pub struct DecoderFlusher<E> {
 #[async_trait]
 impl<F, E> FrameProcessor<F> for DecoderFlusher<E>
 where
-    E: Send + Copy + std::cmp::PartialEq,
+    E: Send + Copy + std::cmp::PartialEq + std::fmt::Debug,
     F: FrameError<E> + Send + 'static,
 {
     async fn process(&mut self, frame_data: F) -> Option<F> {
@@ -78,7 +78,7 @@ where
 
         if let Some(error) = frame_data.get_error() {
             if error == self.flush_error {
-                log::debug!("Received flush error, flushing decode context...");
+                log::debug!("Received flush error {error:?}, flushing decode context...");
                 self.decode_context.lock().await.send_packet(None).unwrap();
                 self.used = true;
             }

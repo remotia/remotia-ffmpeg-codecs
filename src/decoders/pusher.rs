@@ -1,7 +1,10 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use log::debug;
-use rsmpeg::avcodec::{AVCodecContext, AVCodecParserContext};
+use rsmpeg::{
+    avcodec::{AVCodecContext, AVCodecParserContext},
+    error::RsmpegError,
+};
 
 use remotia::traits::FrameProcessor;
 
@@ -28,19 +31,31 @@ where
         let encoded_packets_buffer = frame_data.get_packet_data_buffer();
         // let encoded_packets_buffer = &encoded_buffer[..encoded_buffer.len()];
 
-        let mut decode_context = self.decode_context.lock().await;
+        loop {
+            let mut decode_context = self.decode_context.lock().await;
 
-        let send_result = parse_and_send_packets(
-            &mut decode_context,
-            &mut self.parser_context,
-            encoded_packets_buffer,
-            frame_id,
-        );
-
-        if let Err(error) = send_result {
-            debug!("Dropping frame, reason: {:?}", error);
-            frame_data.report_codec_error(error);
-            return Some(frame_data);
+            match parse_and_send_packets(
+                &mut decode_context,
+                &mut self.parser_context,
+                encoded_packets_buffer,
+                frame_id,
+            ) {
+                Ok(_) => {
+                    debug!("Packet pushed, breaking the loop...");
+                    break;
+                }
+                Err(RsmpegError::DecoderFullError) => {
+                    debug!("Decoder full, trying to push the packet again...");
+                    drop(decode_context);
+                    tokio::task::yield_now().await;
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+                Err(error) => {
+                    debug!("Unable to send packet to decode, reason: {:?}", error);
+                    frame_data.report_codec_error(error);
+                    break;
+                }
+            }
         }
 
         Some(frame_data)
