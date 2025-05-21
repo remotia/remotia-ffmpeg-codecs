@@ -29,26 +29,21 @@ where
     F: FFMpegCodec + Send + 'static,
 {
     async fn process(&mut self, mut frame_data: F) -> Option<F> {
-        loop {
-            let mut encode_context = self.encode_context.lock().await;
+        let mut encode_context = self.encode_context.lock().await;
 
-            let packet = match encode_context.receive_packet() {
-                Ok(packet) => {
-                    // debug!("Received packet of size {}", packet.size);
-                    packet
-                }
-                Err(error) => {
-                    log::debug!("Encoding context returned error '{error:?}', breaking the loop");
-                    frame_data.report_codec_error(error);
-                    break;
-                }
-            };
+        match encode_context.receive_packet() {
+            Ok(packet) => {
+                log::debug!("Received packet of size {}", packet.size);
+                let data = unsafe { std::slice::from_raw_parts(packet.data, packet.size as usize) };
+                // frame_data.set_frame_id(packet.pts);
+                frame_data.write_packet_data(data);
+            }
+            Err(error) => {
+                log::debug!("Encoding context returned error '{error:?}', breaking the loop");
+                frame_data.report_codec_error(error);
+            }
+        };
 
-            let data = unsafe { std::slice::from_raw_parts(packet.data, packet.size as usize) };
-
-            frame_data.set_frame_id(packet.pts);
-            frame_data.write_packet_data(data);
-        }
         Some(frame_data)
     }
 }

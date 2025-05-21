@@ -28,6 +28,8 @@ pub fn parse_and_send_packets(
     );
 
     while parsed_offset < input_buffer.len() {
+        trace!("Currently parsed offset: {parsed_offset}");
+
         let (get_packet, offset) = {
             let this = &mut *parser_context;
             let packet: &mut AVPacket = &mut packet;
