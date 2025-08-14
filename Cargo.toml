@@ -8,15 +8,12 @@ version = "1.28.2"
 features = ["rt", "rt-multi-thread", "macros", "net"]
 
 [dependencies.remotia]
-git = "https://github.com/remotia/remotia"
-branch = "generic_data"
-# path = "../remotia/remotia"
+version = "0.1.3"
 default-features = false
 features = ["buffers", "render"]
 
 [dev-dependencies.remotia]
-git = "https://github.com/remotia/remotia"
-branch = "generic_data"
+version = "0.1.3"
 default-features = false
 features = ["buffers", "render", "capture"]
 
