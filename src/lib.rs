@@ -17,4 +17,7 @@ pub trait FFMpegCodec {
     fn report_decoder_drain_error(&mut self);
     fn set_frame_id(&mut self, frame_id: i64);
     fn get_frame_id(&self) -> i64;
+    fn is_eof(&self) -> bool {
+        false
+    }
 }

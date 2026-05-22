@@ -1,11 +1,8 @@
 use std::sync::Arc;
 
-use log::debug;
 use rsmpeg::{avcodec::AVCodecContext, error::RsmpegError};
 
-use remotia::{
-    traits::{FrameProcessor},
-};
+use remotia::traits::FrameProcessor;
 
 use async_trait::async_trait;
 use tokio::sync::Mutex;
@@ -26,7 +23,6 @@ where
         let mut decode_context = self.decode_context.lock().await;
         match decode_context.receive_frame() {
             Ok(codec_avframe) => {
-                log::trace!("Received AVFrame: {:#?}", codec_avframe);
                 frame_data.set_frame_id(codec_avframe.pts);
 
                 self.scaler.scale_input(&codec_avframe);
@@ -37,18 +33,23 @@ where
                 let height = output_avframe.height as usize;
 
                 let linesize = linesize[0] as usize;
-                let data = unsafe { std::slice::from_raw_parts(output_avframe.data[0], height * linesize) };
+                let data =
+                    unsafe { std::slice::from_raw_parts(output_avframe.data[0], height * linesize) };
 
                 frame_data.write_decoded_buffer(data);
             }
             Err(RsmpegError::DecoderDrainError) => {
-                debug!("No frames to be pulled");
+                log::trace!("No frames to be pulled");
                 frame_data.report_decoder_drain_error();
             }
             Err(RsmpegError::DecoderFlushedError) => {
-                panic!("Decoder has been flushed unexpectedly");
+                log::debug!("Decoder has been flushed");
+                frame_data.report_decoder_drain_error();
             }
-            Err(e) => panic!("{:?}", e),
+            Err(e) => {
+                log::warn!("DecoderPuller: receive_frame error: {:?}", e);
+                frame_data.report_codec_error();
+            }
         }
 
         Some(frame_data)

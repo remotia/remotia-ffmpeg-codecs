@@ -8,17 +8,18 @@ version = "1.28.2"
 features = ["rt", "rt-multi-thread", "macros", "net"]
 
 [dependencies.remotia]
-version = "0.1.3"
+# version = "0.1.3"
+path = "../remotia/crates/remotia"
 default-features = false
 features = ["buffers", "render"]
 
 [dev-dependencies.remotia]
-version = "0.1.3"
+path = "../remotia/crates/remotia"
 default-features = false
 features = ["buffers", "render", "capture"]
 
 [dependencies]
-rsmpeg = { version = "0.14.1+ffmpeg.6.0", features = ["ffmpeg5"]}
+rsmpeg = { version = "0.16.1", default-features = false }
 env_logger = "0.10.0"
 log = "0.4.14"
 async-trait = "0.1.68"

@@ -58,6 +58,9 @@ impl ScalerBuilder {
                 output_height,
                 output_pixel_format,
                 scaling_flags,
+                None,
+                None,
+                None,
             )
             .unwrap()
         };

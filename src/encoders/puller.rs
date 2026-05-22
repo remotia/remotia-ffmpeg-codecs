@@ -32,20 +32,18 @@ where
             let mut encode_context = self.encode_context.lock().await;
 
             let packet = match encode_context.receive_packet() {
-                Ok(packet) => {
-                    // debug!("Received packet of size {}", packet.size);
-                    packet
-                }
+                Ok(packet) => packet,
                 Err(RsmpegError::EncoderDrainError) => {
-                    log::debug!("Drain error, breaking the loop");
                     break;
                 }
                 Err(RsmpegError::EncoderFlushedError) => {
-                    log::debug!("Flushed error, breaking the loop");
                     frame_data.report_flush_error();
                     break;
                 }
-                Err(e) => panic!("{:?}", e),
+                Err(e) => {
+                    log::warn!("EncoderPuller: receive_packet error: {:?}", e);
+                    break;
+                }
             };
 
             let data = unsafe { std::slice::from_raw_parts(packet.data, packet.size as usize) };
@@ -72,7 +70,7 @@ where
         if let Some(error) = frame_data.get_error() {
             if error == self.flush_error {
                 log::debug!("Received flush error, flushing encode context...");
-                self.encode_context.lock().await.send_frame(None).unwrap();
+                self.encode_context.lock().await.send_frame(None).ok();
             }
         }
 

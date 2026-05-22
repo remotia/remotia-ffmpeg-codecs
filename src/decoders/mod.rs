@@ -6,8 +6,6 @@ use tokio::sync::Mutex;
 
 use crate::{builder::unwrap_mandatory, options::Options, scaling::Scaler};
 
-mod utils;
-
 mod puller;
 mod pusher;
 
@@ -49,7 +47,7 @@ impl DecoderBuilder {
 
         let codec_id_string = CString::new(codec_id).unwrap();
         let decoder = AVCodec::find_decoder_by_name(&codec_id_string).unwrap();
-        let parser_context = AVCodecParserContext::find(decoder.id).unwrap();
+        let parser_context = AVCodecParserContext::init(decoder.id).unwrap();
 
         let decode_context = {
             let mut decode_context = AVCodecContext::new(&decoder);
