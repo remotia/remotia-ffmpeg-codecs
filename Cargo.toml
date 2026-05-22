@@ -19,7 +19,7 @@ default-features = false
 features = ["buffers", "render", "capture"]
 
 [dependencies]
-rsmpeg = { version = "0.16.1", default-features = false }
+rsmpeg = { version = "0.18", default-features = false, features = ["ffmpeg6", "link_vcpkg_ffmpeg"] }
 env_logger = "0.10.0"
 log = "0.4.14"
 async-trait = "0.1.68"
