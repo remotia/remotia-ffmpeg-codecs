@@ -2,7 +2,7 @@ use std::{ffi::CString, ptr::NonNull, sync::Arc};
 
 use rsmpeg::avcodec::{AVCodec, AVCodecContext};
 
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 
 use crate::{builder::unwrap_mandatory, ffi, scaling::Scaler};
 
@@ -75,6 +75,7 @@ impl<T> EncoderBuilder<T> {
         };
 
         let filler = unwrap_mandatory(self.filler);
+        let packet_drained = Arc::new(Notify::new());
 
         (
             EncoderPusher {
@@ -82,10 +83,12 @@ impl<T> EncoderBuilder<T> {
                 scaler,
                 filler,
                 eof_processed: false,
+                packet_drained: packet_drained.clone(),
             },
             EncoderPuller {
                 encode_context: encode_context.clone(),
                 flushed: false,
+                packet_drained,
             },
         )
     }

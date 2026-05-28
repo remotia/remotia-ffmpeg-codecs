@@ -5,13 +5,14 @@ use rsmpeg::{avcodec::AVCodecContext, error::RsmpegError};
 
 use async_trait::async_trait;
 
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 
 use crate::FFMpegCodec;
 
 pub struct EncoderPuller {
     pub(super) encode_context: Arc<Mutex<AVCodecContext>>,
     pub(super) flushed: bool,
+    pub(super) packet_drained: Arc<Notify>,
 }
 
 impl EncoderPuller {
@@ -67,6 +68,7 @@ where
             frame_data.set_frame_id(pts);
             frame_data.write_packet_data(data);
             packets_received += 1;
+            self.packet_drained.notify_one();
 
             log::debug!("EncoderPuller: received packet #{}: pts={}, size={} bytes", packets_received, pts, data.len());
         }
