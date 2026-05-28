@@ -2,7 +2,8 @@ use std::{ffi::CString, sync::Arc};
 
 use rsmpeg::avcodec::{AVCodec, AVCodecContext, AVCodecParserContext};
 
-use tokio::sync::Mutex;
+use remotia::pipeline::PipelineHandle;
+use tokio::sync::{mpsc, Mutex};
 
 use crate::{builder::unwrap_mandatory, options::Options, scaling::Scaler};
 
@@ -16,6 +17,7 @@ pub struct DecoderBuilder {
     codec_id: Option<String>,
     options: Option<Options>,
     scaler: Option<Scaler>,
+    pipeline_handle: Option<PipelineHandle>,
 }
 
 impl Default for DecoderBuilder {
@@ -30,6 +32,7 @@ impl DecoderBuilder {
             codec_id: None,
             options: None,
             scaler: None,
+            pipeline_handle: None,
         }
     }
 
@@ -38,6 +41,11 @@ impl DecoderBuilder {
 
     pub fn codec_id(mut self, codec_id: &str) -> Self {
         self.codec_id = Some(codec_id.to_string());
+        self
+    }
+
+    pub fn pipeline_handle(mut self, handle: PipelineHandle) -> Self {
+        self.pipeline_handle = Some(handle);
         self
     }
 
@@ -58,14 +66,21 @@ impl DecoderBuilder {
 
         let scaler = unwrap_mandatory(self.scaler);
 
+        let (frame_tx, frame_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+
         (
             DecoderPusher {
                 decode_context: decode_context.clone(),
                 parser_context,
+                scaler,
+                frame_tx: Some(frame_tx),
+                pipeline_handle: self.pipeline_handle.clone(),
+                eof_processed: false,
             },
             DecoderPuller {
-                decode_context: decode_context.clone(),
-                scaler,
+                _decode_context: decode_context.clone(),
+                frame_rx,
+                pipeline_handle: self.pipeline_handle,
             },
         )
     }
