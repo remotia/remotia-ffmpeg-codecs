@@ -1,3 +1,5 @@
+//! [`DecoderPusher`] — the feeding side of the decoder pusher/puller pair.
+
 use std::sync::Arc;
 
 use rsmpeg::avcodec::{AVCodecContext, AVCodecParserContext};
@@ -12,6 +14,23 @@ use tokio::sync::Mutex;
 
 use crate::{scaling::Scaler, FFMpegCodec};
 
+/// The pusher half of the FFmpeg decoder, responsible for feeding encoded packets into
+/// the decoding context.
+///
+/// `DecoderPusher` implements [`FrameProcessor`] and works in concert with
+/// [`DecoderPuller`](super::DecoderPuller). On each call to [`process`](FrameProcessor::process):
+///
+/// 1. The encoded packet data is read from the frame via
+///    [`FFMpegCodec::get_packet_data_buffer`].
+/// 2. The FFmpeg parser splits the raw byte stream into individual packets.
+/// 3. Each packet is sent to the decoder via `send_packet`.
+/// 4. After each `send_packet`, all available decoded frames are drained via
+///    `receive_frame`, scaled through the [`Scaler`], and sent to the puller through
+///    an internal unbounded channel.
+///
+/// When an EOF frame is received, the pusher flushes the parser and decoder, drops
+/// the channel sender (signaling the puller that no more frames will arrive), and
+/// optionally requests a pipeline shutdown via the [`PipelineHandle`].
 pub struct DecoderPusher {
     pub(super) parser_context: AVCodecParserContext,
     pub(super) decode_context: Arc<Mutex<AVCodecContext>>,
@@ -144,6 +163,8 @@ where
     }
 }
 
+/// Drains all available decoded frames from the codec context, scales them, and
+/// sends the resulting pixel data through the channel to the puller.
 fn drain_frames(
     decode_context: &mut AVCodecContext,
     scaler: &mut Scaler,

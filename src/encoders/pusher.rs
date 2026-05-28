@@ -1,3 +1,5 @@
+//! [`EncoderPusher`] — the feeding side of the encoder pusher/puller pair.
+
 use std::sync::Arc;
 
 use remotia::traits::FrameProcessor;
@@ -11,6 +13,21 @@ use crate::{scaling::Scaler, FFMpegCodec};
 
 use super::fillers::AVFrameFiller;
 
+/// The pusher half of the FFmpeg encoder, responsible for feeding raw frames into the
+/// encoding context.
+///
+/// `EncoderPusher` implements [`FrameProcessor`] and works in concert with
+/// [`EncoderPuller`](super::EncoderPuller). On each call to [`process`](FrameProcessor::process):
+///
+/// 1. The [`AVFrameFiller`] copies pixel data from the incoming frame into the
+///    [`Scaler`]'s input frame.
+/// 2. The scaler converts the pixel format (and optionally resizes).
+/// 3. The scaled frame is sent to the FFmpeg encoder via `send_frame`.
+/// 4. If the encoder's internal buffer is full (`SendFrameAgainError`), the pusher
+///    waits for the puller to drain a packet via the shared [`Notify`] channel.
+///
+/// When an EOF frame is received ([`FFMpegCodec::is_eof`] returns `true`), the pusher
+/// sends a `None` frame to flush the encoder and then stops processing further frames.
 pub struct EncoderPusher<T> {
     pub(super) encode_context: Arc<Mutex<AVCodecContext>>,
     pub(super) scaler: Scaler,

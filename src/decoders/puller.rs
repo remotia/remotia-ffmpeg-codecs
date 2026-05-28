@@ -1,3 +1,5 @@
+//! [`DecoderPuller`] — the draining side of the decoder.
+
 use std::sync::Arc;
 
 use rsmpeg::avcodec::AVCodecContext;
@@ -11,6 +13,17 @@ use tokio::sync::Mutex;
 
 use crate::FFMpegCodec;
 
+/// The puller half of the FFmpeg decoder, responsible for receiving decoded frames.
+///
+/// `DecoderPuller` implements [`FrameProcessor`] and works in concert with
+/// [`DecoderPusher`](super::DecoderPusher). It receives scaled pixel data from the
+/// pusher through an internal unbounded channel and writes it into the frame data via
+/// [`FFMpegCodec::write_decoded_buffer`].
+///
+/// If no decoded data is available yet, the frame is passed through unchanged. When
+/// the channel is closed (meaning the pusher has finished flushing and dropped its
+/// sender), the puller optionally requests a pipeline shutdown via the
+/// [`PipelineHandle`] and returns `None` to stop processing.
 pub struct DecoderPuller {
     pub(super) _decode_context: Arc<Mutex<AVCodecContext>>,
     pub(super) frame_rx: UnboundedReceiver<Vec<u8>>,

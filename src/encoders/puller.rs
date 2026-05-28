@@ -1,3 +1,5 @@
+//! [`EncoderPuller`] and [`EncoderFlusher`] — the draining side of the encoder.
+
 use std::sync::Arc;
 
 use remotia::traits::{FrameError, FrameProcessor};
@@ -9,6 +11,18 @@ use tokio::sync::{Mutex, Notify};
 
 use crate::FFMpegCodec;
 
+/// The puller half of the FFmpeg encoder, responsible for receiving encoded packets.
+///
+/// `EncoderPuller` implements [`FrameProcessor`] and works in concert with
+/// [`EncoderPusher`](super::EncoderPusher). On each call to [`process`](FrameProcessor::process),
+/// it drains as many encoded packets as available from the FFmpeg encoder via
+/// `receive_packet`, writing each packet's data into the frame via
+/// [`FFMpegCodec::write_packet_data`].
+///
+/// When the encoder reports `EncoderFlushedError`, the puller calls
+/// [`FFMpegCodec::report_flush_error`] on the frame data and stops processing further
+/// frames. Each time a packet is successfully received, the puller notifies the pusher
+/// (via the shared [`Notify`] channel) so that a blocked pusher can retry sending.
 pub struct EncoderPuller {
     pub(super) encode_context: Arc<Mutex<AVCodecContext>>,
     pub(super) flushed: bool,
@@ -16,6 +30,11 @@ pub struct EncoderPuller {
 }
 
 impl EncoderPuller {
+    /// Creates an [`EncoderFlusher`] that flushes the encoder when a specific error
+    /// is detected on the frame data.
+    ///
+    /// This is useful for pipelines where a flush error is propagated through the
+    /// frame data and a separate processor is needed to trigger encoder flushing.
     pub fn flusher_on<E>(&self, flush_error: E) -> EncoderFlusher<E> {
         EncoderFlusher {
             encode_context: self.encode_context.clone(),
@@ -80,6 +99,11 @@ where
     }
 }
 
+/// A [`FrameProcessor`] that flushes the encoder when a specific error value is detected.
+///
+/// Created via [`EncoderPuller::flusher_on`]. When the frame data carries an error equal
+/// to the `flush_error` value, this processor sends a `None` frame to the shared encoder
+/// context, signaling FFmpeg to flush all remaining packets.
 pub struct EncoderFlusher<E> {
     pub(super) encode_context: Arc<Mutex<AVCodecContext>>,
     pub(crate) flush_error: E,

@@ -1,9 +1,32 @@
+//! Low-level utility for parsing and sending packets to a decoder context.
+//!
+//! This module provides [`parse_and_send_packets`], a helper function that uses
+//! FFmpeg's `av_parser_parse2` to split a raw byte stream into packets and send them
+//! to a decoder. This is a lower-level alternative to the pusher/puller architecture
+//! in [`super::pusher`], offering more direct control at the cost of manual frame
+//! draining.
+
 use log::{debug, trace};
 use rsmpeg::{
     avcodec::{AVCodecContext, AVCodecParserContext, AVPacket},
     UnsafeDerefMut,
 };
 
+/// Parses encoded data into packets and sends them to the decoder context.
+///
+/// This function iterates over `input_buffer` using `av_parser_parse2` via the
+/// [`AVCodecParserContext`], splitting the raw byte stream into individual packets.
+/// Each successfully parsed packet is sent to `decode_context` via `send_packet`.
+///
+/// Returns `Ok(())` if all packets were sent successfully, or `Err(())` if a
+/// `send_packet` call failed.
+///
+/// # Arguments
+///
+/// - `decode_context` — the open FFmpeg decoder context
+/// - `parser_context` — the parser context for splitting the byte stream
+/// - `input_buffer` — raw encoded data (may contain multiple packets)
+/// - `frame_id` — timestamp assigned to parsed packets (PTS/DTS)
 pub fn parse_and_send_packets(
     decode_context: &mut AVCodecContext,
     parser_context: &mut AVCodecParserContext,

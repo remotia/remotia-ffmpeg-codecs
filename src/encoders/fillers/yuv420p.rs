@@ -1,13 +1,39 @@
+//! [`YUV420PFrameFiller`] — filler for planar YUV420P pixel data.
+
 use remotia::{buffers::BytesMut, traits::BorrowFrameProperties};
 use rsmpeg::avutil::AVFrame;
 
 use super::AVFrameFiller;
 
+/// [`AVFrameFiller`] that copies planar YUV420P pixel data into an FFmpeg [`AVFrame`].
+///
+/// The filler reads a [`BytesMut`] buffer identified by `yuv420p_buffer_key` from the
+/// frame data and splits it into the Y, U, and V planes of the AVFrame. The source
+/// buffer is expected to contain the planes concatenated in Y-U-V order with the
+/// following sizes:
+///
+/// - Y plane: `height × linesize[0]`
+/// - U plane: `(height/2) × linesize[1]`
+/// - V plane: `(height/2) × linesize[2]`
+///
+/// This is typically used when the pipeline's captured frames are already in YUV420P
+/// format (e.g. from a Y4M source) and can be fed directly to the encoder without
+/// pixel format conversion.
+///
+/// # Example
+///
+/// ```no_run
+/// use remotia_ffmpeg_codecs::encoders::fillers::yuv420p::YUV420PFrameFiller;
+///
+/// let filler = YUV420PFrameFiller::new(MyBufferKey::YuvFrame);
+/// ```
 pub struct YUV420PFrameFiller<K> {
     pub(super) yuv420p_buffer_key: K,
 }
 
 impl<K> YUV420PFrameFiller<K> {
+    /// Creates a new YUV420P filler that reads pixel data from the buffer identified
+    /// by `yuv420p_buffer_key`.
     pub fn new(yuv420p_buffer_key: K) -> Self {
         Self { yuv420p_buffer_key }
     }
