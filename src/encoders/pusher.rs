@@ -53,18 +53,41 @@ where
 
         log::debug!("EncoderPusher: send_frame frame_id={}", frame_id);
 
-        match encode_context.send_frame(Some(self.scaler.scaled_frame())) {
-            Ok(()) => {
-                log::debug!("EncoderPusher: send_frame accepted frame_id={}", frame_id);
-            }
-            Err(RsmpegError::SendFrameAgainError) => {
-                log::warn!("EncoderPusher: send_frame AGAIN for frame_id={}, DROPPING", frame_id);
-            }
-            Err(e) => {
-                log::warn!("EncoderPusher: send_frame error for frame_id={}: {:?}", frame_id, e);
+        let mut sent = false;
+        let mut frame_data = frame_data;
+        while !sent {
+            match encode_context.send_frame(Some(self.scaler.scaled_frame())) {
+                Ok(()) => {
+                    log::debug!("EncoderPusher: send_frame accepted frame_id={}", frame_id);
+                    sent = true;
+                }
+                Err(RsmpegError::SendFrameAgainError) => {
+                    log::debug!("EncoderPusher: send_frame AGAIN for frame_id={}, draining packets and retrying", frame_id);
+                    drain_packets(&mut encode_context, &mut frame_data);
+                }
+                Err(e) => {
+                    log::warn!("EncoderPusher: send_frame error for frame_id={}: {:?}", frame_id, e);
+                    sent = true;
+                }
             }
         }
 
         Some(frame_data)
+    }
+}
+
+fn drain_packets<F: FFMpegCodec>(encode_context: &mut AVCodecContext, frame_data: &mut F) {
+    loop {
+        match encode_context.receive_packet() {
+            Ok(packet) => {
+                let data = unsafe { std::slice::from_raw_parts(packet.data, packet.size as usize) };
+                frame_data.write_packet_data(data);
+            }
+            Err(RsmpegError::EncoderDrainError) | Err(RsmpegError::EncoderFlushedError) => break,
+            Err(e) => {
+                log::warn!("EncoderPusher: drain receive_packet error: {:?}", e);
+                break;
+            }
+        }
     }
 }
