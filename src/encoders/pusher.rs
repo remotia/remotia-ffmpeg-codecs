@@ -29,10 +29,12 @@ where
             return None;
         }
 
+        let frame_id = frame_data.get_frame_id();
+
         let mut encode_context = self.encode_context.lock().await;
 
         if frame_data.is_eof() {
-            log::debug!("EncoderPusher: EOF, flushing encoder");
+            log::debug!("EncoderPusher: EOF signal received, flushing encoder");
             encode_context.send_frame(None).ok();
             self.eof_processed = true;
             return Some(frame_data);
@@ -40,6 +42,7 @@ where
 
         let input_avframe = self.scaler.input_frame_mut();
         if !self.filler.fill(&frame_data, input_avframe) {
+            log::warn!("EncoderPusher: Filler rejected frame_id={}", frame_id);
             return None;
         }
 
@@ -48,13 +51,17 @@ where
             .scaled_frame_mut()
             .set_pts(frame_data.get_frame_id());
 
+        log::debug!("EncoderPusher: send_frame frame_id={}", frame_id);
+
         match encode_context.send_frame(Some(self.scaler.scaled_frame())) {
-            Ok(()) => {}
+            Ok(()) => {
+                log::debug!("EncoderPusher: send_frame accepted frame_id={}", frame_id);
+            }
             Err(RsmpegError::SendFrameAgainError) => {
-                log::warn!("EncoderPusher: encoder not ready, dropping frame");
+                log::warn!("EncoderPusher: send_frame AGAIN for frame_id={}, DROPPING", frame_id);
             }
             Err(e) => {
-                log::warn!("EncoderPusher: send_frame error: {:?}", e);
+                log::warn!("EncoderPusher: send_frame error for frame_id={}: {:?}", frame_id, e);
             }
         }
 
