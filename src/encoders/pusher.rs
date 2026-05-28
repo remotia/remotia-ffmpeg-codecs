@@ -15,6 +15,7 @@ pub struct EncoderPusher<T> {
     pub(super) encode_context: Arc<Mutex<AVCodecContext>>,
     pub(super) scaler: Scaler,
     pub(super) filler: T,
+    pub(super) eof_processed: bool,
 }
 
 #[async_trait]
@@ -24,17 +25,24 @@ where
     F: FFMpegCodec + Send + 'static,
 {
     async fn process(&mut self, mut frame_data: F) -> Option<F> {
+        if self.eof_processed {
+            return None;
+        }
+
         let mut encode_context = self.encode_context.lock().await;
 
         if frame_data.is_eof() {
             log::debug!("EncoderPusher: EOF, flushing encoder");
             encode_context.send_frame(None).ok();
             drain_packets(&mut encode_context, &mut frame_data);
+            self.eof_processed = true;
             return Some(frame_data);
         }
 
         let input_avframe = self.scaler.input_frame_mut();
-        self.filler.fill(&frame_data, input_avframe);
+        if !self.filler.fill(&frame_data, input_avframe) {
+            return None;
+        }
 
         self.scaler.scale();
         self.scaler

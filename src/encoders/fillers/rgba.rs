@@ -18,8 +18,10 @@ where
     K: Send + Copy,
     F: BorrowFrameProperties<K, BytesMut> + Send + 'static,
 {
-    fn fill(&mut self, frame_data:&F, avframe: &mut AVFrame) {
-        let source_buffer = frame_data.get_ref(&self.rgba_buffer_key).unwrap();
+    fn fill(&mut self, frame_data: &F, avframe: &mut AVFrame) -> bool {
+        let Some(source_buffer) = frame_data.get_ref(&self.rgba_buffer_key) else {
+            return false;
+        };
 
         let linesize = avframe.linesize;
         let height = avframe.height as usize;
@@ -28,5 +30,6 @@ where
         let data = unsafe { std::slice::from_raw_parts_mut(avframe.data[0], height * linesize) };
 
         data.copy_from_slice(source_buffer);
+        true
     }
 }

@@ -81,9 +81,11 @@ impl<T> EncoderBuilder<T> {
                 encode_context: encode_context.clone(),
                 scaler,
                 filler,
+                eof_processed: false,
             },
             EncoderPuller {
                 encode_context: encode_context.clone(),
+                flushed: false,
             },
         )
     }

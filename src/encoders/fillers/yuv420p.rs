@@ -18,8 +18,10 @@ where
     K: Send + Copy,
     F: BorrowFrameProperties<K, BytesMut> + Send + 'static,
 {
-    fn fill(&mut self, frame_data: &F, avframe: &mut AVFrame) {
-        let source_buffer = frame_data.get_ref(&self.yuv420p_buffer_key).unwrap();
+    fn fill(&mut self, frame_data: &F, avframe: &mut AVFrame) -> bool {
+        let Some(source_buffer) = frame_data.get_ref(&self.yuv420p_buffer_key) else {
+            return false;
+        };
 
         let linesize = avframe.linesize;
         let height = avframe.height as usize;
@@ -36,5 +38,6 @@ where
         written_bytes += u_data.len();
 
         v_data.copy_from_slice(&source_buffer[written_bytes..written_bytes + v_data.len()]);
+        true
     }
 }

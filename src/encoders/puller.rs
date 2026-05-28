@@ -11,6 +11,7 @@ use crate::FFMpegCodec;
 
 pub struct EncoderPuller {
     pub(super) encode_context: Arc<Mutex<AVCodecContext>>,
+    pub(super) flushed: bool,
 }
 
 impl EncoderPuller {
@@ -28,6 +29,10 @@ where
     F: FFMpegCodec + Send + 'static,
 {
     async fn process(&mut self, mut frame_data: F) -> Option<F> {
+        if self.flushed && frame_data.get_packet_data_buffer().is_empty() {
+            return None;
+        }
+
         loop {
             let mut encode_context = self.encode_context.lock().await;
 
@@ -38,6 +43,7 @@ where
                 }
                 Err(RsmpegError::EncoderFlushedError) => {
                     frame_data.report_flush_error();
+                    self.flushed = true;
                     break;
                 }
                 Err(e) => {
@@ -51,6 +57,7 @@ where
             frame_data.set_frame_id(packet.pts);
             frame_data.write_packet_data(data);
         }
+
         Some(frame_data)
     }
 }
